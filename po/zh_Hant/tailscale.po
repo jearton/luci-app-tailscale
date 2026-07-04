@@ -43,6 +43,11 @@ msgstr "是否註銷當前登錄並且解綁當前設備？"
 msgid "Auth Key"
 msgstr "認證密鑰"
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:267
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:268
+msgid "Configured; leave blank to keep existing value."
+msgstr "已配置；留空則保留現有值。"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:248
 msgid "Available flags"
 msgstr "可用參數"
@@ -299,3 +304,39 @@ msgstr "本地廣域網訪問虛擬局域網"
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:158
 msgid "Workdir"
 msgstr "工作目錄"
+
+msgid "Online"
+msgstr "在線"
+
+msgid "Offline"
+msgstr "離線"
+
+msgid "Not found"
+msgstr "未找到"
+
+msgid "Peer Keepalive"
+msgstr "對端保活"
+
+msgid "Periodically send lightweight Tailscale pings to selected peers."
+msgstr "定時向選中的對端發送輕量 Tailscale ping。"
+
+msgid "Keepalive Peers"
+msgstr "保活對端"
+
+msgid "Select peers that should be kept warm with periodic Tailscale pings."
+msgstr "選擇需要透過定時 Tailscale ping 保持路徑活躍的對端。"
+
+msgid "No Available Peers"
+msgstr "沒有可用對端"
+
+msgid "Keepalive Interval"
+msgstr "保活間隔"
+
+msgid "Seconds between keepalive probes."
+msgstr "兩次保活探測之間的秒數。"
+
+msgid "Failure Log Interval"
+msgstr "失敗日誌間隔"
+
+msgid "Seconds between repeated failure log messages for the same peer."
+msgstr "同一對端重複失敗日誌之間的秒數。"

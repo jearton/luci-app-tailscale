@@ -37,6 +37,11 @@ msgstr ""
 msgid "Auth Key"
 msgstr ""
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:267
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:268
+msgid "Configured; leave blank to keep existing value."
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:248
 msgid "Available flags"
 msgstr ""
@@ -292,4 +297,40 @@ msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:158
 msgid "Workdir"
+msgstr ""
+
+msgid "Online"
+msgstr ""
+
+msgid "Offline"
+msgstr ""
+
+msgid "Not found"
+msgstr ""
+
+msgid "Peer Keepalive"
+msgstr ""
+
+msgid "Periodically send lightweight Tailscale pings to selected peers."
+msgstr ""
+
+msgid "Keepalive Peers"
+msgstr ""
+
+msgid "Select peers that should be kept warm with periodic Tailscale pings."
+msgstr ""
+
+msgid "No Available Peers"
+msgstr ""
+
+msgid "Keepalive Interval"
+msgstr ""
+
+msgid "Seconds between keepalive probes."
+msgstr ""
+
+msgid "Failure Log Interval"
+msgstr ""
+
+msgid "Seconds between repeated failure log messages for the same peer."
 msgstr ""

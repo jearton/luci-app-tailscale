@@ -43,6 +43,7 @@ async function getStatus() {
 		authURL: undefined,
 		displayName: undefined,
 		onlineExitNodes: [],
+		peers: [],
 		subnetRoutes: []
 	};
 	const res = await callServiceList('tailscale');
@@ -60,6 +61,22 @@ async function getStatus() {
 	status.authURL = tailscaleStatus.AuthURL;
 	status.displayName = (status.backendState === "Running") ? tailscaleStatus.User[tailscaleStatus.Self.UserID].DisplayName : undefined;
 	if (tailscaleStatus.Peer) {
+		status.peers = Object.values(tailscaleStatus.Peer)
+			.map(peer => {
+				const ip = Array.isArray(peer.TailscaleIPs) ? (peer.TailscaleIPs[0] || '') : '';
+				const dnsName = (peer.DNSName || '').replace(/\.$/, '');
+				const label = [
+					peer.HostName || dnsName || ip,
+					ip,
+					peer.Online ? _('Online') : _('Offline')
+				].filter(Boolean).join('    ');
+
+				return {
+					name: peer.HostName || dnsName || ip,
+					label: label
+				};
+			})
+			.filter(peer => peer.name);
 		status.onlineExitNodes = Object.values(tailscaleStatus.Peer)
 			.flatMap(peer => (peer.ExitNodeOption && peer.Online) ? [peer.HostName] : []);
 		status.subnetRoutes = Object.values(tailscaleStatus.Peer)
@@ -95,6 +112,16 @@ function renderLogin(loginStatus, authURL, displayName) {
 	return renderHTML;
 }
 
+function toList(value) {
+	if (!value)
+		return [];
+
+	if (Array.isArray(value))
+		return value;
+
+	return String(value).trim().split(/\s+/).filter(Boolean);
+}
+
 return view.extend({
 	load() {
 		return Promise.all([
@@ -109,7 +136,10 @@ return view.extend({
 		const statusData = data[1];
 		const interfaceSubnets = data[2];
 		const onlineExitNodes = statusData.onlineExitNodes;
+		const peers = statusData.peers;
 		const subnetRoutes = statusData.subnetRoutes;
+		const hasAuthKey = !!uci.get('tailscale', 'settings', 'authkey');
+		const savedKeepalivePeers = toList(uci.get('tailscale', 'settings', 'keepalive_peers'));
 
 		m = new form.Map('tailscale', _('Tailscale'), _('Tailscale is a cross-platform and easy to use virtual LAN.'));
 
@@ -240,6 +270,43 @@ return view.extend({
 		o.default = "ts_ac_lan ts_ac_wan lan_ac_ts";
 		o.rmempty = true;
 
+		o = s.taboption('advance', form.Flag, 'keepalive_enabled', _('Peer Keepalive'), _('Periodically send lightweight Tailscale pings to selected peers.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('advance', form.MultiValue, 'keepalive_peers', _('Keepalive Peers'), _('Select peers that should be kept warm with periodic Tailscale pings.'));
+		const keepalivePeerNames = {};
+		peers.forEach(function(peer) {
+			keepalivePeerNames[peer.name] = true;
+			o.value(peer.name, peer.label);
+		});
+		savedKeepalivePeers.forEach(function(peer) {
+			if (!keepalivePeerNames[peer]) {
+				keepalivePeerNames[peer] = true;
+				o.value(peer, [peer, _('Not found')].join('    '));
+			}
+		});
+		if (Object.keys(keepalivePeerNames).length === 0) {
+			o.value('', _('No Available Peers'));
+			o.readonly = true;
+		} else {
+			o.default = savedKeepalivePeers.join(' ');
+		}
+		o.depends('keepalive_enabled', '1');
+		o.rmempty = true;
+
+		o = s.taboption('advance', form.Value, 'keepalive_interval', _('Keepalive Interval'), _('Seconds between keepalive probes.'));
+		o.datatype = 'uinteger';
+		o.default = '20';
+		o.depends('keepalive_enabled', '1');
+		o.rmempty = false;
+
+		o = s.taboption('advance', form.Value, 'keepalive_failure_log_interval', _('Failure Log Interval'), _('Seconds between repeated failure log messages for the same peer.'));
+		o.datatype = 'uinteger';
+		o.default = '300';
+		o.depends('keepalive_enabled', '1');
+		o.rmempty = false;
+
 		s.tab('extra', _('Extra Settings'));
 
 		o = s.taboption('extra', form.DynamicList, 'flags', _('Additional Flags'),
@@ -259,9 +326,21 @@ return view.extend({
 		o.default = '';
 		o.rmempty = true;
 
-		o = s.option(form.Value, 'authKey', _('Auth Key'));
+		o = s.option(form.Value, 'authkey', _('Auth Key'));
+		o.password = true;
 		o.default = '';
 		o.rmempty = true;
+		o.placeholder = hasAuthKey ? _('Configured; leave blank to keep existing value.') : '';
+		o.description = hasAuthKey ? _('Configured; leave blank to keep existing value.') : '';
+		o.cfgvalue = function() {
+			return '';
+		};
+		o.write = function(section_id, value) {
+			value = (value || '').trim();
+			if (value)
+				return uci.set('tailscale', section_id, 'authkey', value);
+		};
+		o.remove = function() {};
 
 		return m.render();
 	}

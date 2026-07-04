@@ -34,6 +34,14 @@ config tailscale 'settings'
 	#list access 'ts_ac_wan'
 	#list access 'lan_ac_ts'
 	#list access 'wan_ac_ts'
+	# Enable periodic Tailscale pings to keep selected peer paths warm
+	#option keepalive_enabled '0'
+	# Select peer hostnames from tailscale status --json
+	#list keepalive_peers ''
+	# Seconds between keepalive probes
+	option keepalive_interval '20'
+	# Seconds between repeated failure log messages for the same peer
+	option keepalive_failure_log_interval '300'
 	# Set extra flags for enabling settings upon the initiation of Tailscale
 	# Documentation https://tailscale.com/kb/1241/tailscale-up
 	#list flags ''
