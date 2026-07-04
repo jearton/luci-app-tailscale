@@ -5,6 +5,7 @@
 
 TAILSCALE_BIN="${TAILSCALE_BIN:-/usr/sbin/tailscale}"
 LOGGER_CMD="${LOGGER_CMD:-logger}"
+JSHN_LIB="${JSHN_LIB:-/usr/share/libubox/jshn.sh}"
 
 log_msg() {
 	local priority="$1"
@@ -33,110 +34,161 @@ log_rate_limited_error() {
 }
 
 read_status() {
-	if [ -n "$TAILSCALE_STATUS_FILE" ] && [ -r "$TAILSCALE_STATUS_FILE" ]; then
+	if [ -n "${TAILSCALE_STATUS_FILE:-}" ] && [ -r "$TAILSCALE_STATUS_FILE" ]; then
 		cat "$TAILSCALE_STATUS_FILE"
 	else
 		"$TAILSCALE_BIN" status --json
 	fi
 }
 
+normalize_dns() {
+	printf '%s' "$1" | sed 's/\.$//'
+}
+
+short_dns_name() {
+	normalize_dns "$1" | sed 's/\..*$//'
+}
+
+peer_matches() {
+	local peer="$1"
+	local host="$2"
+	local dns="$3"
+	local normalized_dns short_dns
+
+	normalized_dns="$(normalize_dns "$dns")"
+	short_dns="$(short_dns_name "$dns")"
+
+	[ "$host" = "$peer" ] || \
+		[ "$dns" = "$peer" ] || \
+		[ "$normalized_dns" = "$peer" ] || \
+		[ "$short_dns" = "$peer" ]
+}
+
+emit_resolved_peer() {
+	local peer="$1"
+	local host="$2"
+	local dns="$3"
+	local ip="$4"
+
+	[ -n "$host" ] || [ -n "$dns" ] || return 1
+	peer_matches "$peer" "$host" "$dns" || return 1
+
+	if [ -n "$ip" ]; then
+		printf 'OK\t%s\n' "$ip"
+	else
+		printf 'NO_IP\t\n'
+	fi
+	return 0
+}
+
+resolve_peer_with_jshn() {
+	local peer="$1"
+	local status keys key host dns ips ip value
+
+	[ -r "$JSHN_LIB" ] || return 1
+	status="$(read_status)" || return 1
+
+	# OpenWrt ships jshn.sh in the jshn package; it parses JSON independently of
+	# whitespace and field order.
+	. "$JSHN_LIB" || return 1
+
+	json_cleanup
+	json_load "$status" || {
+		json_cleanup
+		return 1
+	}
+
+	json_select Peer || {
+		json_cleanup
+		return 1
+	}
+
+	json_get_keys keys
+	for key in $keys; do
+		json_select "$key" || continue
+
+		host=
+		dns=
+		ips=
+		ip=
+		json_get_var host HostName
+		json_get_var dns DNSName
+
+		if json_select TailscaleIPs; then
+			json_get_values ips
+			for value in $ips; do
+				ip="$value"
+				break
+			done
+			json_select ..
+		fi
+
+		if emit_resolved_peer "$peer" "$host" "$dns" "$ip"; then
+			json_cleanup
+			return 0
+		fi
+
+		json_select ..
+	done
+
+	json_cleanup
+	printf 'NOT_FOUND\t\n'
+	return 0
+}
+
+resolve_peer_with_python() {
+	local peer="$1"
+	local status
+
+	command -v python3 >/dev/null 2>&1 || return 1
+	status="$(read_status)" || return 1
+
+	STATUS_JSON="$status" python3 - "$peer" <<'PY'
+import json
+import os
+import sys
+
+peer = sys.argv[1]
+
+try:
+    status = json.loads(os.environ["STATUS_JSON"])
+except Exception:
+    sys.exit(1)
+
+
+def norm_dns(value):
+    return value[:-1] if value.endswith(".") else value
+
+
+def short_dns(value):
+    return norm_dns(value).split(".", 1)[0]
+
+
+for item in status.get("Peer", {}).values():
+    host = item.get("HostName", "")
+    dns = item.get("DNSName", "")
+    if not host and not dns:
+        continue
+
+    if peer in (host, dns, norm_dns(dns), short_dns(dns)):
+        ips = item.get("TailscaleIPs") or []
+        if ips:
+            print("OK\t%s" % ips[0])
+        else:
+            print("NO_IP\t")
+        sys.exit(0)
+
+print("NOT_FOUND\t")
+PY
+}
+
 resolve_peer_from_status() {
 	local peer="$1"
 
-	read_status | awk -v peer="$peer" '
-		function clear_peer() {
-			host = "";
-			dns = "";
-			ip = "";
-			in_ips = 0;
-		}
+	resolve_peer_with_jshn "$peer" && return 0
+	resolve_peer_with_python "$peer" && return 0
 
-		function norm_dns(value) {
-			sub(/\.$/, "", value);
-			return value;
-		}
-
-		function short_dns(value) {
-			value = norm_dns(value);
-			sub(/\..*$/, "", value);
-			return value;
-		}
-
-		function emit_if_match() {
-			if (host == "" && dns == "")
-				return;
-
-			normalized_dns = norm_dns(dns);
-			if (host == peer || dns == peer || normalized_dns == peer || short_dns(dns) == peer) {
-				if (ip != "")
-					print "OK\t" ip;
-				else
-					print "NO_IP\t";
-				found = 1;
-				exit;
-			}
-		}
-
-		function json_string_value(line) {
-			sub(/^[^:]*:[[:space:]]*"/, "", line);
-			sub(/".*$/, "", line);
-			return line;
-		}
-
-		BEGIN {
-			in_peer_map = 0;
-			found = 0;
-			clear_peer();
-		}
-
-		/"Peer"[[:space:]]*:/ {
-			in_peer_map = 1;
-			next;
-		}
-
-		in_peer_map && /^[[:space:]]*"[^"]+"[[:space:]]*:[[:space:]]*\{/ {
-			emit_if_match();
-			clear_peer();
-			next;
-		}
-
-		in_peer_map && /"HostName"[[:space:]]*:/ {
-			host = json_string_value($0);
-			next;
-		}
-
-		in_peer_map && /"DNSName"[[:space:]]*:/ {
-			dns = json_string_value($0);
-			next;
-		}
-
-		in_peer_map && /"TailscaleIPs"[[:space:]]*:/ {
-			in_ips = 1;
-			next;
-		}
-
-		in_peer_map && in_ips && /]/ {
-			in_ips = 0;
-			next;
-		}
-
-		in_peer_map && in_ips && ip == "" && /"/ {
-			value = $0;
-			sub(/^[^"]*"/, "", value);
-			sub(/".*$/, "", value);
-			if (value != "")
-				ip = value;
-			next;
-		}
-
-		END {
-			if (!found) {
-				emit_if_match();
-				if (!found)
-					print "NOT_FOUND\t";
-			}
-		}
-	'
+	printf 'ERROR\tno JSON parser available\n'
 }
 
 resolve_peers() {
@@ -176,6 +228,10 @@ run_once() {
 				;;
 			NO_IP)
 				log_rate_limited_error "$peer_key" "peer $peer has no Tailscale IP" "$failure_log_interval" "$now"
+				rm -f "$TMP_STATE_DIR/$peer_key.success"
+				;;
+			ERROR)
+				log_rate_limited_error "$peer_key" "peer $peer resolution failed: $ip" "$failure_log_interval" "$now"
 				rm -f "$TMP_STATE_DIR/$peer_key.success"
 				;;
 			*)

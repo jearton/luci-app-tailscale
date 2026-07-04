@@ -5,7 +5,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=LuCI for Tailscale
-LUCI_DEPENDS:=+tailscale
+LUCI_DEPENDS:=+tailscale +jshn
 LUCI_PKGARCH:=all
 
 PKG_VERSION:=1.2.6
