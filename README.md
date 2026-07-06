@@ -47,6 +47,29 @@ Tailscale is a zero config VPN for building secure networks.
 
 --------------
 
+## AdGuard DNS Auto Switch
+
+- Disabled by default.
+- Intended for OpenWrt setups where local AdGuard Home owns LAN DNS port 53.
+- LAN DHCP should advertise the router LAN IP as DNS, for example `6,192.168.100.1`.
+- Tailscale should run with `accept_dns=1`.
+- DNS health is checked through Headscale/Tailscale DNS at `100.100.100.100`.
+- Healthy profile: default upstreams plus Tailnet conditional upstreams.
+- Unhealthy profile: default upstreams only.
+- Configuration is written through the AdGuard Home HTTP API, not by editing the YAML path.
+- Leaving the password field blank keeps the existing value.
+
+Rollback:
+
+```shell
+/etc/init.d/tailscale-adguard-dns stop
+uci set tailscale.settings.adguard_dns_switch_enabled='0'
+uci commit tailscale
+/etc/init.d/tailscale-adguard-dns disable
+```
+
+--------------
+
 ## Thanks
 - [Carseason/openwrt-tailscale](https://github.com/Carseason/openwrt-tailscale)
 - [immortalwrt/luci-app-zerotier](https://github.com/immortalwrt/luci/blob/master/applications/luci-app-zerotier)
@@ -57,4 +80,3 @@ Tailscale is a zero config VPN for building secure networks.
 <img width="573" alt="Basic" src="https://github.com/user-attachments/assets/bfca389a-bcec-42de-b5dd-b9588fd5db23" />
 <img width="577" alt="Advanced" src="https://github.com/user-attachments/assets/d60ce19e-b3f3-43a7-98fc-7df6e2231898" />
 <img width="575" alt="Extra" src="https://github.com/user-attachments/assets/6de5eaa7-6c18-48b8-a44a-0eaa311b0b79" />
-
