@@ -5,6 +5,7 @@
 
 UCI_CMD="${UCI_CMD:-uci}"
 CURL_CMD="${CURL_CMD:-curl}"
+JQ_CMD="${JQ_CMD:-jq}"
 LOGGER_CMD="${LOGGER_CMD:-logger}"
 NSLOOKUP_CMD="${NSLOOKUP_CMD:-nslookup}"
 PGREP_CMD="${PGREP_CMD:-pgrep}"
@@ -184,52 +185,15 @@ check_adguard_api() {
 	curl_post_json "/control/test_upstream_dns" "$api_check_body" >/dev/null || return 1
 }
 
-json_array_end_awk='
-function find_array_end(text, start,    i, ch, depth, in_string, escaped) {
-	depth = 0
-	in_string = 0
-	escaped = 0
-	for (i = start; i <= length(text); i++) {
-		ch = substr(text, i, 1)
-		if (in_string) {
-			if (escaped)
-				escaped = 0
-			else if (ch == "\\")
-				escaped = 1
-			else if (ch == "\"")
-				in_string = 0
-		} else if (ch == "\"") {
-			in_string = 1
-		} else if (ch == "[") {
-			depth++
-		} else if (ch == "]") {
-			depth--
-			if (depth == 0)
-				return i
-		}
-	}
-	return 0
-}
-'
-
 json_extract_upstreams_body() {
 	dns_info="$1"
 
-	awk "$json_array_end_awk"'
-		{
-			if (NR > 1)
-				data = data "\n"
-			data = data $0
-		}
-		END {
-			if (!match(data, /"upstream_dns"[[:space:]]*:[[:space:]]*\[/))
-				exit 1
-			array_start = RSTART + RLENGTH - 1
-			array_end = find_array_end(data, array_start)
-			if (!array_end)
-				exit 1
-			print "{\"upstream_dns\":" substr(data, array_start, array_end - array_start + 1) "}"
-		}
+	"$JQ_CMD" -c -e '
+		if (.upstream_dns | type) == "array" then
+			{upstream_dns: .upstream_dns}
+		else
+			error("missing upstream_dns")
+		end
 	' "$dns_info"
 }
 
@@ -237,44 +201,8 @@ json_replace_upstreams() {
 	dns_info="$1"
 	upstream_file="$2"
 
-	awk -v upstream_file="$upstream_file" "$json_array_end_awk"'
-		function json_escape(value) {
-			gsub(/\\/, "\\\\", value)
-			gsub(/"/, "\\\"", value)
-			gsub(/\r/, "\\r", value)
-			gsub(/\t/, "\\t", value)
-			return value
-		}
-		BEGIN {
-			replacement = "\"upstream_dns\":["
-			separator = ""
-			while ((getline line < upstream_file) > 0) {
-				if (line != "") {
-					replacement = replacement separator "\"" json_escape(line) "\""
-					separator = ","
-					count++
-				}
-			}
-			close(upstream_file)
-			if (count == 0)
-				exit 2
-			replacement = replacement "]"
-		}
-		{
-			if (NR > 1)
-				data = data "\n"
-			data = data $0
-		}
-		END {
-			if (!match(data, /"upstream_dns"[[:space:]]*:[[:space:]]*\[/))
-				exit 1
-			key_start = RSTART
-			array_start = RSTART + RLENGTH - 1
-			array_end = find_array_end(data, array_start)
-			if (!array_end)
-				exit 1
-			printf "%s%s%s", substr(data, 1, key_start - 1), replacement, substr(data, array_end + 1)
-		}
+	"$JQ_CMD" -c --rawfile upstreams "$upstream_file" '
+		.upstream_dns = ($upstreams | split("\n") | map(select(length > 0)))
 	' "$dns_info"
 }
 

@@ -30,7 +30,7 @@ AdGuard Home documents:
 - `POST /control/dns_config` for persistent DNS settings updates, including `upstream_dns`.
 - `POST /control/test_upstream_dns` for non-persistent authenticated POST validation.
 
-The script must preserve the current `dns_info` JSON and replace only the `upstream_dns` array before POSTing it back. The implementation uses POSIX shell and awk only; it must not depend on Lua or jq.
+The script must preserve the current `dns_info` JSON and replace only the `upstream_dns` array before POSTing it back. The implementation uses `jq` for JSON handling and declares it as a package dependency.
 
 Preflight must not persistently write `/control/dns_config`. It verifies authenticated POST capability with AdGuard Home's non-persistent `/control/test_upstream_dns` endpoint.
 
@@ -284,6 +284,7 @@ tests/tailscale_adguard_dns_switch_test.sh: ... root/usr/sbin/tailscale_adguard_
 
 UCI_CMD="${UCI_CMD:-uci}"
 CURL_CMD="${CURL_CMD:-curl}"
+JQ_CMD="${JQ_CMD:-jq}"
 LOGGER_CMD="${LOGGER_CMD:-logger}"
 NSLOOKUP_CMD="${NSLOOKUP_CMD:-nslookup}"
 PGREP_CMD="${PGREP_CMD:-pgrep}"
@@ -421,31 +422,12 @@ curl_post_json() {
 json_extract_upstreams_body() {
 	local dns_info="$1"
 
-	awk '
-		{
-			if (NR > 1)
-				data = data "\n"
-			data = data $0
-		}
-		END {
-			if (!match(data, /"upstream_dns"[[:space:]]*:[[:space:]]*\[/))
-				exit 1
-			array_start = RSTART + RLENGTH - 1
-			depth = 0
-			for (i = array_start; i <= length(data); i++) {
-				ch = substr(data, i, 1)
-				if (ch == "[")
-					depth++
-				else if (ch == "]") {
-					depth--
-					if (depth == 0) {
-						print "{\"upstream_dns\":" substr(data, array_start, i - array_start + 1) "}"
-						exit 0
-					}
-				}
-			}
-			exit 1
-		}
+	"$JQ_CMD" -c -e '
+		if (.upstream_dns | type) == "array" then
+			{upstream_dns: .upstream_dns}
+		else
+			error("missing upstream_dns")
+		end
 	' "$dns_info"
 }
 
@@ -467,67 +449,8 @@ json_replace_upstreams() {
 	local dns_info="$1"
 	local upstream_file="$2"
 
-	awk -v upstream_file="$upstream_file" '
-		function json_escape(value) {
-			gsub(/\\/, "\\\\", value)
-			gsub(/"/, "\\\"", value)
-			gsub(/\r/, "\\r", value)
-			gsub(/\t/, "\\t", value)
-			return value
-		}
-		BEGIN {
-			replacement = "\"upstream_dns\":["
-			separator = ""
-			while ((getline line < upstream_file) > 0) {
-				if (line != "") {
-					replacement = replacement separator "\"" json_escape(line) "\""
-					separator = ","
-					count++
-				}
-			}
-			close(upstream_file)
-			if (count == 0)
-				exit 2
-			replacement = replacement "]"
-		}
-		{
-			if (NR > 1)
-				data = data "\n"
-			data = data $0
-		}
-		END {
-			if (!match(data, /"upstream_dns"[[:space:]]*:[[:space:]]*\[/))
-				exit 1
-			key_start = RSTART
-			array_start = RSTART + RLENGTH - 1
-			depth = 0
-			in_string = 0
-			escaped = 0
-			for (i = array_start; i <= length(data); i++) {
-				ch = substr(data, i, 1)
-				if (in_string) {
-					if (escaped)
-						escaped = 0
-					else if (ch == "\\")
-						escaped = 1
-					else if (ch == "\"")
-						in_string = 0
-				} else if (ch == "\"") {
-					in_string = 1
-				} else if (ch == "[") {
-					depth++
-				} else if (ch == "]") {
-					depth--
-					if (depth == 0) {
-						array_end = i
-						break
-					}
-				}
-			}
-			if (!array_end)
-				exit 1
-			printf "%s%s%s", substr(data, 1, key_start - 1), replacement, substr(data, array_end + 1)
-		}
+	"$JQ_CMD" -c --rawfile upstreams "$upstream_file" '
+		.upstream_dns = ($upstreams | split("\n") | map(select(length > 0)))
 	' "$dns_info"
 }
 
@@ -984,7 +907,7 @@ git commit -m "Add AdGuard DNS switch LuCI settings"
 - Modify: `/Users/jearton/projects/litata/luci-app-tailscale/Makefile`
 - Modify: `/Users/jearton/projects/litata/luci-app-tailscale/README.md`
 
-- [ ] **Step 1: Add `curl` dependency**
+- [ ] **Step 1: Add `curl` and `jq` dependencies**
 
 Change:
 
@@ -995,7 +918,7 @@ LUCI_DEPENDS:=+tailscale +jshn
 to:
 
 ```make
-LUCI_DEPENDS:=+tailscale +jshn +curl
+LUCI_DEPENDS:=+tailscale +jshn +curl +jq
 ```
 
 - [ ] **Step 2: Add README section**

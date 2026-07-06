@@ -156,6 +156,13 @@ OUT
 SH
 	chmod +x "$TMP_DIR/ubus"
 
+	cat >"$TMP_DIR/jq" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${JQ_LOG:?}"
+exec "${REAL_JQ:?}" "$@"
+SH
+	chmod +x "$TMP_DIR/jq"
+
 	PATH="$TMP_DIR:$PATH"
 	export PATH
 }
@@ -165,8 +172,10 @@ prepare_api_json() {
 	LOGGER_LOG="$TMP_DIR/logger.log"
 	DNS_INFO_JSON="$TMP_DIR/dns-info.json"
 	POSTED_JSON="$TMP_DIR/posted.json"
+	JQ_LOG="$TMP_DIR/jq.log"
+	REAL_JQ="${REAL_JQ:-$(command -v jq)}"
 	STATE_DIR="$TMP_DIR/state"
-	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON STATE_DIR
+	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON JQ_LOG REAL_JQ STATE_DIR
 
 	cat >"$DNS_INFO_JSON" <<'JSON'
 {"upstream_dns":["1.1.1.1"],"bootstrap_dns":["223.5.5.5"],"fallback_dns":["119.29.29.29"],"cache_enabled":false,"cache_size":4194304}
@@ -181,6 +190,7 @@ run_script() {
 	PGREP_CMD="$TMP_DIR/pgrep" \
 	NETSTAT_CMD="$TMP_DIR/netstat" \
 	UBUS_CMD="$TMP_DIR/ubus" \
+	JQ_CMD="$TMP_DIR/jq" \
 	"$SCRIPT" "$@"
 }
 
@@ -233,6 +243,7 @@ test_apply_profile_preserves_dns_info() {
 	assert_contains '"bootstrap_dns":["223.5.5.5"]' "$posted" "API payload should preserve bootstrap_dns"
 	assert_contains '"fallback_dns":["119.29.29.29"]' "$posted" "API payload should preserve fallback_dns"
 	assert_contains '"upstream_dns":["[/lan/]127.0.0.1:5353","[/litata.tailnet/]100.100.100.100","[/litata.com/]100.100.100.100","223.5.5.5","119.29.29.29","100.100.100.100"]' "$posted" "API payload should replace upstream_dns"
+	assert_contains "--rawfile upstreams" "$(cat "$JQ_LOG")" "profile application should use jq with raw upstream file input"
 	assert_contains "--connect-timeout 3" "$(cat "$CURL_LOG")" "curl calls should include a connect timeout"
 	assert_contains "--max-time 10" "$(cat "$CURL_LOG")" "curl calls should include a max time"
 }
@@ -253,6 +264,8 @@ test_empty_profile_does_not_write_dns_config() {
 }
 
 mkdir -p "$TMP_DIR"
+REAL_JQ="${REAL_JQ:-$(command -v jq)}"
+export REAL_JQ
 make_fake_commands
 prepare_api_json
 
