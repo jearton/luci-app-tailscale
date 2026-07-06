@@ -122,12 +122,40 @@ function toList(value) {
 	return String(value).trim().split(/\s+/).filter(Boolean);
 }
 
+function parseKeyValues(stdout) {
+	const out = {};
+	String(stdout || '').split(/\n/).forEach(function(line) {
+		const idx = line.indexOf('=');
+		if (idx > 0)
+			out[line.slice(0, idx)] = line.slice(idx + 1);
+	});
+	return out;
+}
+
+function renderCheck(value) {
+	const ok = value === 'pass';
+	return E('span', { style: 'color:' + (ok ? 'green' : 'red') }, ok ? _('Pass') : _('Fail'));
+}
+
+function hasFormListValue(option, section_id) {
+	return toList(option.formvalue(section_id)).map(function(value) {
+		return String(value || '').trim();
+	}).filter(Boolean).length > 0;
+}
+
 return view.extend({
 	load() {
 		return Promise.all([
 			uci.load('tailscale'),
 			getStatus(),
-			getInterfaceSubnets()
+			getInterfaceSubnets(),
+			fs.exec("/usr/sbin/tailscale_adguard_dns_switch", ["--preflight"]).catch(function(e) {
+				let stdout = e && e.stdout ? e.stdout : '';
+				const error = e && (e.message || e.stderr || e) || 'preflight command failed';
+				if (stdout && stdout.charAt(stdout.length - 1) !== '\n')
+					stdout += '\n';
+				return { stdout: stdout + 'ready=fail\nerror=' + String(error).replace(/\n/g, ' ') + '\n' };
+			})
 		]);
 	},
 
@@ -140,8 +168,17 @@ return view.extend({
 		const subnetRoutes = statusData.subnetRoutes;
 		const hasAuthKey = !!uci.get('tailscale', 'settings', 'authkey');
 		const savedKeepalivePeers = toList(uci.get('tailscale', 'settings', 'keepalive_peers'));
+		const adguardPreflight = parseKeyValues((data[3] || {}).stdout);
+		const hasAdguardPassword = !!uci.get('tailscale', 'settings', 'adguard_password');
+		const adguardEnvironmentChecks = [
+			'adguard_process',
+			'port_53_adguard',
+			'dhcp_advertises_lan_dns',
+			'adguard_api'
+		];
 
 		m = new form.Map('tailscale', _('Tailscale'), _('Tailscale is a cross-platform and easy to use virtual LAN.'));
+		let acceptDnsOption;
 
 		s = m.section(form.TypedSection);
 		s.anonymous = true;
@@ -213,9 +250,9 @@ return view.extend({
 		o.default = '';
 		o.rmempty = true;
 
-		o = s.taboption('advance', form.Flag, 'accept_dns', _('Accept DNS'), _('Accept DNS configuration from the Tailscale admin console.'));
-		o.default = o.enabled;
-		o.rmempty = false;
+		acceptDnsOption = s.taboption('advance', form.Flag, 'accept_dns', _('Accept DNS'), _('Accept DNS configuration from the Tailscale admin console.'));
+		acceptDnsOption.default = acceptDnsOption.enabled;
+		acceptDnsOption.rmempty = false;
 
 		o = s.taboption('advance', form.Flag, 'advertise_exit_node', _('Exit Node'), _('Offer to be an exit node for outbound internet traffic from the Tailscale network.'));
 		o.default = o.disabled;
@@ -306,6 +343,113 @@ return view.extend({
 		o.default = '300';
 		o.depends('keepalive_enabled', '1');
 		o.rmempty = false;
+
+		s.tab('adguard_dns', _('AdGuard DNS'));
+		let adguardDefaultUpstreamsOption, adguardTailnetUpstreamsOption, adguardHealthDomainOption, adguardHealthExpectedIpsOption;
+
+		o = s.taboption('adguard_dns', form.DummyValue, '_adguard_dns_status', _('Status'));
+		o.renderWidget = function() {
+			return E('div', { class: 'table' }, [
+				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('AdGuard process')), E('div', { class: 'td' }, renderCheck(adguardPreflight.adguard_process))]),
+				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Port 53 is AdGuard')), E('div', { class: 'td' }, renderCheck(adguardPreflight.port_53_adguard))]),
+				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('LAN DHCP advertises this router as DNS')), E('div', { class: 'td' }, renderCheck(adguardPreflight.dhcp_advertises_lan_dns))]),
+				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('AdGuard API')), E('div', { class: 'td' }, renderCheck(adguardPreflight.adguard_api))]),
+				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Tailscale Accept DNS')), E('div', { class: 'td' }, renderCheck(adguardPreflight.accept_dns))]),
+				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Tailnet DNS health check')), E('div', { class: 'td' }, renderCheck(adguardPreflight.health_check))])
+			]);
+		};
+
+		o = s.taboption('adguard_dns', form.Flag, 'adguard_dns_switch_enabled', _('Enable AdGuard DNS Auto Switch'), _('Only enable when all status checks pass.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+		o.validate = function(section_id, value) {
+			if (value !== '1')
+				return true;
+
+			if (!String(adguardHealthDomainOption.formvalue(section_id) || '').trim())
+				return _('Health Check Domain is required before enabling AdGuard DNS auto switch.');
+
+			if (!hasFormListValue(adguardHealthExpectedIpsOption, section_id))
+				return _('At least one Expected Health IP is required before enabling AdGuard DNS auto switch.');
+
+			if (!hasFormListValue(adguardDefaultUpstreamsOption, section_id))
+				return _('At least one Default Upstream is required before enabling AdGuard DNS auto switch.');
+
+			if (!hasFormListValue(adguardTailnetUpstreamsOption, section_id))
+				return _('At least one Tailnet Upstream is required before enabling AdGuard DNS auto switch.');
+
+			if (acceptDnsOption.formvalue(section_id) !== '1')
+				return _('Accept DNS must be enabled before enabling AdGuard DNS auto switch.');
+
+			for (let i = 0; i < adguardEnvironmentChecks.length; i++) {
+				if (adguardPreflight[adguardEnvironmentChecks[i]] !== 'pass')
+					return _('AdGuard DNS auto switch cannot be enabled until every environment status check passes.');
+			}
+
+			return true;
+		};
+
+		adguardDefaultUpstreamsOption = s.taboption('adguard_dns', form.DynamicList, 'adguard_default_upstreams', _('Default Upstreams'), _('Used when Tailnet DNS is unhealthy.'));
+		adguardDefaultUpstreamsOption.default = '';
+		adguardDefaultUpstreamsOption.rmempty = true;
+
+		adguardTailnetUpstreamsOption = s.taboption('adguard_dns', form.DynamicList, 'adguard_tailnet_upstreams', _('Tailnet Upstreams'), _('Added when Tailnet DNS is healthy.'));
+		adguardTailnetUpstreamsOption.default = '';
+		adguardTailnetUpstreamsOption.rmempty = true;
+
+		adguardHealthDomainOption = s.taboption('adguard_dns', form.Value, 'adguard_health_domain', _('Health Check Domain'));
+		adguardHealthDomainOption.rmempty = true;
+
+		o = s.taboption('adguard_dns', form.Value, 'adguard_health_dns', _('Health Check DNS Server'));
+		o.default = '100.100.100.100';
+		o.rmempty = false;
+
+		adguardHealthExpectedIpsOption = s.taboption('adguard_dns', form.DynamicList, 'adguard_health_expected_ips', _('Expected Health IPs'));
+		adguardHealthExpectedIpsOption.default = '';
+		adguardHealthExpectedIpsOption.rmempty = true;
+
+		o = s.taboption('adguard_dns', form.Value, 'adguard_check_interval', _('Check Interval'));
+		o.datatype = 'uinteger';
+		o.default = '10';
+		o.rmempty = false;
+
+		o = s.taboption('adguard_dns', form.Value, 'adguard_success_threshold', _('Success Threshold'));
+		o.datatype = 'uinteger';
+		o.default = '2';
+		o.rmempty = false;
+
+		o = s.taboption('adguard_dns', form.Value, 'adguard_failure_threshold', _('Failure Threshold'));
+		o.datatype = 'uinteger';
+		o.default = '2';
+		o.rmempty = false;
+
+		o = s.taboption('adguard_dns', form.Flag, 'adguard_clear_cache', _('Clear AdGuard Cache After Switch'));
+		o.default = o.enabled;
+		o.rmempty = false;
+
+		o = s.taboption('adguard_dns', form.Value, 'adguard_api_url', _('AdGuard API URL'));
+		o.default = 'http://127.0.0.1:3000';
+		o.rmempty = false;
+
+		o = s.taboption('adguard_dns', form.Value, 'adguard_username', _('AdGuard Username'));
+		o.default = '';
+		o.rmempty = true;
+
+		o = s.taboption('adguard_dns', form.Value, 'adguard_password', _('AdGuard Password'));
+		o.password = true;
+		o.default = '';
+		o.rmempty = true;
+		o.placeholder = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
+		o.description = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
+		o.cfgvalue = function() {
+			return '';
+		};
+		o.write = function(section_id, value) {
+			value = (value || '').trim();
+			if (value)
+				return uci.set('tailscale', section_id, 'adguard_password', value);
+		};
+		o.remove = function() {};
 
 		s.tab('extra', _('Extra Settings'));
 
