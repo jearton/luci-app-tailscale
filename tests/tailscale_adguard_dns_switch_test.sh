@@ -51,19 +51,22 @@ case "$*" in
 	"-q get tailscale.settings.adguard_success_threshold") echo "${UCI_SUCCESS_THRESHOLD:-2}" ;;
 	"-q get tailscale.settings.adguard_failure_threshold") echo "${UCI_FAILURE_THRESHOLD:-2}" ;;
 	"-q get tailscale.settings.adguard_clear_cache") echo "${UCI_CLEAR_CACHE:-1}" ;;
+	"-q get tailscale.settings.adguard_default_upstreams")
+		[ "${UCI_EMPTY_DEFAULT_UPSTREAMS:-0}" = "1" ] && exit 1
+		echo "[/lan/]127.0.0.1:5353 223.5.5.5 100.100.100.100 119.29.29.29 223.5.5.5"
+		;;
+	"-q get tailscale.settings.adguard_tailnet_upstreams")
+		echo "[/litata.tailnet/]100.100.100.100 [/litata.com/]100.100.100.100"
+		;;
+	"-q get tailscale.settings.adguard_health_expected_ips") echo "10.10.6.156" ;;
 	"-q get network.lan.ipaddr") echo "${UCI_LAN_IP:-192.168.100.1}" ;;
 	"-q get dhcp.lan.dhcp_option") echo "${UCI_DHCP_OPTIONS:-6,192.168.100.1}" ;;
 	"show tailscale.settings.adguard_default_upstreams")
 		[ "${UCI_EMPTY_DEFAULT_UPSTREAMS:-0}" = "1" ] && exit 0
-		echo "tailscale.settings.adguard_default_upstreams='[/lan/]127.0.0.1:5353'"
-		echo "tailscale.settings.adguard_default_upstreams='223.5.5.5'"
-		echo "tailscale.settings.adguard_default_upstreams='100.100.100.100'"
-		echo "tailscale.settings.adguard_default_upstreams='119.29.29.29'"
-		echo "tailscale.settings.adguard_default_upstreams='223.5.5.5'"
+		echo "tailscale.settings.adguard_default_upstreams='[/lan/]127.0.0.1:5353' '223.5.5.5' '100.100.100.100' '119.29.29.29' '223.5.5.5'"
 		;;
 	"show tailscale.settings.adguard_tailnet_upstreams")
-		echo "tailscale.settings.adguard_tailnet_upstreams='[/litata.tailnet/]100.100.100.100'"
-		echo "tailscale.settings.adguard_tailnet_upstreams='[/litata.com/]100.100.100.100'"
+		echo "tailscale.settings.adguard_tailnet_upstreams='[/litata.tailnet/]100.100.100.100' '[/litata.com/]100.100.100.100'"
 		;;
 	"show tailscale.settings.adguard_health_expected_ips")
 		echo "tailscale.settings.adguard_health_expected_ips='10.10.6.156'"
@@ -116,6 +119,15 @@ case "$*" in
 		echo OK
 		;;
 	*"/control/test_upstream_dns"*)
+		body=
+		while [ "$#" -gt 0 ]; do
+			if [ "$1" = "--data-binary" ]; then
+				shift
+				body="${1#@}"
+			fi
+			shift
+		done
+		[ -n "$body" ] && cat "$body" >"${TEST_UPSTREAM_JSON:?}"
 		[ "${CURL_TEST_UPSTREAM_FAIL:-0}" = "1" ] && exit 1
 		echo OK
 		;;
@@ -172,10 +184,11 @@ prepare_api_json() {
 	LOGGER_LOG="$TMP_DIR/logger.log"
 	DNS_INFO_JSON="$TMP_DIR/dns-info.json"
 	POSTED_JSON="$TMP_DIR/posted.json"
+	TEST_UPSTREAM_JSON="$TMP_DIR/test-upstream.json"
 	JQ_LOG="$TMP_DIR/jq.log"
 	REAL_JQ="${REAL_JQ:-$(command -v jq)}"
 	STATE_DIR="$TMP_DIR/state"
-	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON JQ_LOG REAL_JQ STATE_DIR
+	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG REAL_JQ STATE_DIR
 
 	cat >"$DNS_INFO_JSON" <<'JSON'
 {"upstream_dns":["1.1.1.1"],"bootstrap_dns":["223.5.5.5"],"fallback_dns":["119.29.29.29"],"cache_enabled":false,"cache_size":4194304}
@@ -234,6 +247,7 @@ test_preflight_requires_api_post_test() {
 		fail "preflight must not POST to /control/dns_config"
 	fi
 	assert_contains "/control/test_upstream_dns" "$(cat "$CURL_LOG")" "preflight should POST to test_upstream_dns"
+	assert_eq '{"upstream_dns":["223.5.5.5"]}' "$(cat "$TEST_UPSTREAM_JSON")" "preflight should use a fixed public upstream for non-persistent API POST validation"
 }
 
 test_apply_profile_preserves_dns_info() {

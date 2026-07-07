@@ -36,8 +36,7 @@ uci_get_raw() {
 uci_list() {
 	option="$1"
 
-	"$UCI_CMD" show "tailscale.settings.$option" 2>/dev/null | \
-		sed -n "s/^tailscale\\.settings\\.$option='\\(.*\\)'$/\\1/p"
+	"$UCI_CMD" -q get "tailscale.settings.$option" 2>/dev/null | tr ' ' '\n' | sed '/^$/d'
 }
 
 enabled() {
@@ -175,26 +174,11 @@ curl_post_json() {
 
 check_adguard_api() {
 	mkdir -p "$STATE_DIR"
-	api_check_info="$STATE_DIR/preflight_dns_info.json"
 	api_check_body="$STATE_DIR/preflight_test_upstream_dns.json"
 
 	curl_get "/control/status" >/dev/null || return 1
-	curl_get "/control/dns_info" >"$api_check_info" || return 1
-	[ -s "$api_check_info" ] || return 1
-	json_extract_upstreams_body "$api_check_info" >"$api_check_body" || return 1
+	printf '%s\n' '{"upstream_dns":["223.5.5.5"]}' >"$api_check_body"
 	curl_post_json "/control/test_upstream_dns" "$api_check_body" >/dev/null || return 1
-}
-
-json_extract_upstreams_body() {
-	dns_info="$1"
-
-	"$JQ_CMD" -c -e '
-		if (.upstream_dns | type) == "array" then
-			{upstream_dns: .upstream_dns}
-		else
-			error("missing upstream_dns")
-		end
-	' "$dns_info"
 }
 
 json_replace_upstreams() {

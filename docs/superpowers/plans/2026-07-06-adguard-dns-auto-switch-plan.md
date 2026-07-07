@@ -97,16 +97,22 @@ case "$*" in
 	"-q get tailscale.settings.adguard_success_threshold") echo "${UCI_SUCCESS_THRESHOLD:-2}" ;;
 	"-q get tailscale.settings.adguard_failure_threshold") echo "${UCI_FAILURE_THRESHOLD:-2}" ;;
 	"-q get tailscale.settings.adguard_clear_cache") echo "${UCI_CLEAR_CACHE:-1}" ;;
+	"-q get tailscale.settings.adguard_default_upstreams")
+		[ "${UCI_EMPTY_DEFAULT_UPSTREAMS:-0}" = "1" ] && exit 1
+		echo "[/lan/]127.0.0.1:5353 223.5.5.5 100.100.100.100 119.29.29.29 223.5.5.5"
+		;;
+	"-q get tailscale.settings.adguard_tailnet_upstreams")
+		echo "[/litata.tailnet/]100.100.100.100 [/litata.com/]100.100.100.100"
+		;;
+	"-q get tailscale.settings.adguard_health_expected_ips") echo "10.10.6.156" ;;
 	"-q get network.lan.ipaddr") echo "${UCI_LAN_IP:-192.168.100.1}" ;;
 	"-q get dhcp.lan.dhcp_option") echo "${UCI_DHCP_OPTIONS:-6,192.168.100.1}" ;;
 	"show tailscale.settings.adguard_default_upstreams")
-		echo "tailscale.settings.adguard_default_upstreams='[/lan/]127.0.0.1:5353'"
-		echo "tailscale.settings.adguard_default_upstreams='223.5.5.5'"
-		echo "tailscale.settings.adguard_default_upstreams='119.29.29.29'"
+		[ "${UCI_EMPTY_DEFAULT_UPSTREAMS:-0}" = "1" ] && exit 0
+		echo "tailscale.settings.adguard_default_upstreams='[/lan/]127.0.0.1:5353' '223.5.5.5' '100.100.100.100' '119.29.29.29' '223.5.5.5'"
 		;;
 	"show tailscale.settings.adguard_tailnet_upstreams")
-		echo "tailscale.settings.adguard_tailnet_upstreams='[/litata.tailnet/]100.100.100.100'"
-		echo "tailscale.settings.adguard_tailnet_upstreams='[/litata.com/]100.100.100.100'"
+		echo "tailscale.settings.adguard_tailnet_upstreams='[/litata.tailnet/]100.100.100.100' '[/litata.com/]100.100.100.100'"
 		;;
 	"show tailscale.settings.adguard_health_expected_ips")
 		echo "tailscale.settings.adguard_health_expected_ips='10.10.6.156'"
@@ -419,29 +425,14 @@ curl_post_json() {
 	"$CURL_CMD" -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" $auth -H "Content-Type: application/json" -X POST --data-binary "@$body_file" "$base$endpoint"
 }
 
-json_extract_upstreams_body() {
-	local dns_info="$1"
-
-	"$JQ_CMD" -c -e '
-		if (.upstream_dns | type) == "array" then
-			{upstream_dns: .upstream_dns}
-		else
-			error("missing upstream_dns")
-		end
-	' "$dns_info"
-}
-
 check_adguard_api() {
-	local api_check_info api_check_body
+	local api_check_body
 
 	mkdir -p "$STATE_DIR"
-	api_check_info="$STATE_DIR/preflight_dns_info.json"
 	api_check_body="$STATE_DIR/preflight_test_upstream_dns.json"
 
 	curl_get "/control/status" >/dev/null || return 1
-	curl_get "/control/dns_info" >"$api_check_info" || return 1
-	[ -s "$api_check_info" ] || return 1
-	json_extract_upstreams_body "$api_check_info" >"$api_check_body" || return 1
+	printf '%s\n' '{"upstream_dns":["223.5.5.5"]}' >"$api_check_body"
 	curl_post_json "/control/test_upstream_dns" "$api_check_body" >/dev/null || return 1
 }
 
