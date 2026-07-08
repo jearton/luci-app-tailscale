@@ -151,8 +151,8 @@ stop_instance() {
 		uci -q del_list $suffix
 	done
  
-	# Remove network settings
-	uci -q delete network.tailscale
+	# Keep network.tailscale as the LuCI/netifd control entry. It uses the
+	# tailscale proto handler and must remain present when the service is stopped.
 	uci -q delete network.ts_lan
 	for route in $(uci show network | grep 'network.ts_subnet[0-9]\+=route' | grep -o 'network.ts_subnet[0-9]\+'); do
 		uci -q delete $route
@@ -169,7 +169,7 @@ stop_instance() {
 	
 	# Commit configuration changes and reload service
 	[ -n "$(uci changes dhcp)" ] && uci commit dhcp && /etc/init.d/dnsmasq reload
-	[ -n "$(uci changes network)" ] && uci commit network && /etc/init.d/network reload
+	[ -n "$(uci changes network)" ] && uci commit network
 	[ -n "$(uci changes firewall)" ] && uci commit firewall && /etc/init.d/firewall reload
 
 	/usr/sbin/tailscaled --cleanup

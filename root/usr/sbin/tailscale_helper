@@ -49,7 +49,7 @@ ts4=$(tailscale ip -4)
 
 network_update=0
 [ "$(uci -q get network.tailscale)" = "interface" ] || network_update=1
-[ "$(uci -q get network.tailscale.proto)" = "none" ] || network_update=1
+[ "$(uci -q get network.tailscale.proto)" = "tailscale" ] || network_update=1
 [ "$(uci -q get network.tailscale.device)" = "$ts0" ] || network_update=1
 [ -z "$(uci -q get network.tailscale.ipaddr)" ] || network_update=1
 [ -z "$(uci -q get network.tailscale.netmask)" ] || network_update=1
@@ -62,7 +62,7 @@ if [ "$network_update" = "1" ]; then
 	uci -q delete network.tailscale.ip6addr
 	[ -n "$(uci batch <<-EOF 2>&1
 		set network.tailscale='interface'
-		set network.tailscale.proto='none'
+		set network.tailscale.proto='tailscale'
 		set network.tailscale.device='$ts0'
 	EOF
 	)" ] && revert_exit "Failed to configure network interface for Tailscale."
