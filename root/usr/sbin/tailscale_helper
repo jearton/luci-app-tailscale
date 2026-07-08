@@ -40,25 +40,28 @@ if [ "$ACCEPT_DNS" = "1" ]; then
 	done
 fi
 
-# Configure network interface for Tailscale.
+# Configure a LuCI-visible network interface for Tailscale without letting
+# netifd reload the live tailscale0 device after tailscaled installs routes.
 ts0=$(ifconfig | awk '/^tailscale/ { print $1; exit }' | tr -d :)
 ts4=$(tailscale ip -4)
 ts6=$(tailscale ip -6 2>/dev/null || true)
 [ -z "$ts0" ] && revert_exit "Failed to find Tailscale interface."
 [ -z "$ts4" ] && revert_exit "Failed to get Tailscale IPv4 address."
 
-uci -q delete network.ts_lan
-uci -q delete network.tailscale.ip6addr
-[ -n "$(uci batch <<-EOF 2>&1
-	set network.tailscale='interface'
-	set network.tailscale.proto='static'
-	set network.tailscale.ipaddr='$ts4'
-	set network.tailscale.netmask='255.255.255.255'
-	set network.tailscale.device='$ts0'
-EOF
-)" ] && revert_exit "Failed to configure network interface for Tailscale."
-if [ -n "$ts6" ]; then
-	uci add_list network.tailscale.ip6addr="$ts6" || revert_exit "Failed to configure Tailscale IPv6 address."
+if [ -z "$(uci -q get network.tailscale)" ]; then
+	uci -q delete network.ts_lan
+	uci -q delete network.tailscale.ip6addr
+	[ -n "$(uci batch <<-EOF 2>&1
+		set network.tailscale='interface'
+		set network.tailscale.proto='static'
+		set network.tailscale.ipaddr='$ts4'
+		set network.tailscale.netmask='255.255.255.255'
+		set network.tailscale.device='$ts0'
+	EOF
+	)" ] && revert_exit "Failed to configure network interface for Tailscale."
+	if [ -n "$ts6" ]; then
+		uci add_list network.tailscale.ip6addr="$ts6" || revert_exit "Failed to configure Tailscale IPv6 address."
+	fi
 fi
 
 # Configure exit node firewall rules
@@ -146,5 +149,5 @@ fi
 
 # Commit configuration changes and reload service
 [ -n "$(uci changes dhcp)" ] && uci commit dhcp && /etc/init.d/dnsmasq reload
-[ -n "$(uci changes network)" ] && uci commit network && /etc/init.d/network reload
+[ -n "$(uci changes network)" ] && uci commit network
 [ -n "$(uci changes firewall)" ] && uci commit firewall && /etc/init.d/firewall reload
