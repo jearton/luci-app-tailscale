@@ -149,9 +149,8 @@ stop_instance() {
 		uci -q del_list $suffix
 	done
  
-	# Keep LuCI-visible network/firewall configuration persistent. Tailscale owns
-	# tailscale0, policy rules, and table 52 routes; network/firewall reloads can
-	# transiently remove those routes while tailscaled is running.
+	# Tailscale owns tailscale0, policy rules, and table 52 routes. Do not reload
+	# network here; netifd must not manage tailscale0.
 	[ -n "$(uci changes dhcp)" ] && uci commit dhcp && /etc/init.d/dnsmasq reload
 
 	/usr/sbin/tailscaled --cleanup

@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.package_format }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_format: ipk
+            sdk_arch: x86_64-23.05.5
+            artifact_glob: "*.ipk"
+          - package_format: apk
+            sdk_arch: x86_64
+            artifact_glob: "*.apk"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build package
+        uses: openwrt/gh-action-sdk@v9
+        env:
+          ARCH: ${{ matrix.sdk_arch }}
+          PACKAGES: luci-app-tailscale
+
+      - name: Collect package artifacts
+        run: |
+          set -eu
+          mkdir -p artifacts
+          find bin/packages -type f \( \
+            -name 'luci-app-tailscale_*.ipk' -o \
+            -name 'luci-i18n-tailscale-zh-cn_*.ipk' -o \
+            -name 'luci-i18n-tailscale-zh-tw_*.ipk' -o \
+            -name 'luci-app-tailscale-*.apk' -o \
+            -name 'luci-i18n-tailscale-zh-cn-*.apk' -o \
+            -name 'luci-i18n-tailscale-zh-tw-*.apk' \
+          \) -exec cp {} artifacts/ \;
+          ls -l artifacts
+          find artifacts -type f -name '${{ matrix.artifact_glob }}' | grep -q .
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-tailscale-${{ matrix.package_format }}
+          path: artifacts/*
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.ipk
+            artifacts/**/*.apk
+          body: |
+            ## Usage
+
+            Upload the prebuilt ipk or apk package to the `/tmp` directory of OpenWrt.
+
+            ### opkg package manager
+
+            ```sh
+            opkg update
+            opkg install --force-overwrite /tmp/luci-*-tailscale*.ipk
+            ```
+
+            ### apk package manager
+
+            ```sh
+            apk update
+            apk add --allow-untrusted --force-overwrite /tmp/luci-*-tailscale*.apk
+            ```
