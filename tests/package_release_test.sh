@@ -19,6 +19,23 @@ assert_contains() {
 	grep -F -- "$needle" "$ROOT_DIR/$file" >/dev/null || fail "$file should contain: $needle"
 }
 
+line_number() {
+	needle="$1"
+	file="$2"
+	grep -nF -- "$needle" "$ROOT_DIR/$file" | head -n 1 | cut -d: -f1
+}
+
+assert_before() {
+	first="$1"
+	second="$2"
+	file="$3"
+	first_line="$(line_number "$first" "$file")"
+	second_line="$(line_number "$second" "$file")"
+	[ -n "$first_line" ] || fail "$file should contain: $first"
+	[ -n "$second_line" ] || fail "$file should contain: $second"
+	[ "$first_line" -lt "$second_line" ] || fail "$file should place '$first' before '$second'"
+}
+
 assert_not_exists() {
 	[ ! -e "$ROOT_DIR/$1" ] || fail "$1 should not exist"
 }
@@ -42,6 +59,19 @@ assert_file root/etc/uci-defaults/40_luci-tailscale
 
 assert_contains "Peer Keepalive" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "AdGuard DNS" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_before "AdGuard API URL" "_adguard_dns_status" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_before "AdGuard Username" "_adguard_dns_status" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_before "AdGuard Password" "_adguard_dns_status" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_before "_adguard_dns_status" "Enable AdGuard DNS Auto Switch" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "adguardCredentialsChanged" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "AdGuard 用户名"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Health Check DNS Server"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "健康检查 DNS 服务器"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Configured; leave blank to keep existing value."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "已配置；留空则保留现有值。"' po/zh_Hans/tailscale.po
 assert_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains "PROG=/usr/sbin/tailscale_adguard_dns_switch" root/etc/init.d/tailscale-adguard-dns
 

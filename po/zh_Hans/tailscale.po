@@ -340,3 +340,99 @@ msgstr "失败日志间隔"
 
 msgid "Seconds between repeated failure log messages for the same peer."
 msgstr "同一对端重复失败日志之间的秒数。"
+
+msgid "AdGuard DNS"
+msgstr "AdGuard DNS"
+
+msgid "AdGuard API URL"
+msgstr "AdGuard API 地址"
+
+msgid "AdGuard Username"
+msgstr "AdGuard 用户名"
+
+msgid "AdGuard Password"
+msgstr "AdGuard 密码"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Pass"
+msgstr "通过"
+
+msgid "Fail"
+msgstr "失败"
+
+msgid "AdGuard process"
+msgstr "AdGuard 进程"
+
+msgid "Port 53 is AdGuard"
+msgstr "53 端口由 AdGuard 接管"
+
+msgid "LAN DHCP advertises this router as DNS"
+msgstr "LAN DHCP 下发本路由器作为 DNS"
+
+msgid "AdGuard API"
+msgstr "AdGuard API"
+
+msgid "Tailscale Accept DNS"
+msgstr "Tailscale 接受 DNS"
+
+msgid "Tailnet DNS health check"
+msgstr "Tailnet DNS 健康检查"
+
+msgid "Enable AdGuard DNS Auto Switch"
+msgstr "启用 AdGuard DNS 自动切换"
+
+msgid "Only enable when all status checks pass."
+msgstr "仅在所有状态检查通过后启用。"
+
+msgid "Health Check Domain is required before enabling AdGuard DNS auto switch."
+msgstr "启用 AdGuard DNS 自动切换前必须填写健康检查域名。"
+
+msgid "At least one Expected Health IP is required before enabling AdGuard DNS auto switch."
+msgstr "启用 AdGuard DNS 自动切换前至少需要填写一个预期健康 IP。"
+
+msgid "At least one Default Upstream is required before enabling AdGuard DNS auto switch."
+msgstr "启用 AdGuard DNS 自动切换前至少需要填写一个默认上游。"
+
+msgid "At least one Tailnet Upstream is required before enabling AdGuard DNS auto switch."
+msgstr "启用 AdGuard DNS 自动切换前至少需要填写一个 Tailnet 上游。"
+
+msgid "Accept DNS must be enabled before enabling AdGuard DNS auto switch."
+msgstr "启用 AdGuard DNS 自动切换前必须启用接受 DNS。"
+
+msgid "AdGuard DNS auto switch cannot be enabled until every environment status check passes."
+msgstr "所有环境状态检查通过后才能启用 AdGuard DNS 自动切换。"
+
+msgid "Default Upstreams"
+msgstr "默认上游"
+
+msgid "Used when Tailnet DNS is unhealthy."
+msgstr "Tailnet DNS 不健康时使用。"
+
+msgid "Tailnet Upstreams"
+msgstr "Tailnet 上游"
+
+msgid "Added when Tailnet DNS is healthy."
+msgstr "Tailnet DNS 健康时追加使用。"
+
+msgid "Health Check Domain"
+msgstr "健康检查域名"
+
+msgid "Health Check DNS Server"
+msgstr "健康检查 DNS 服务器"
+
+msgid "Expected Health IPs"
+msgstr "预期健康 IP"
+
+msgid "Check Interval"
+msgstr "检查间隔"
+
+msgid "Success Threshold"
+msgstr "成功阈值"
+
+msgid "Failure Threshold"
+msgstr "失败阈值"
+
+msgid "Clear AdGuard Cache After Switch"
+msgstr "切换后清理 AdGuard 缓存"

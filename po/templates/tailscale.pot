@@ -334,3 +334,99 @@ msgstr ""
 
 msgid "Seconds between repeated failure log messages for the same peer."
 msgstr ""
+
+msgid "AdGuard DNS"
+msgstr ""
+
+msgid "AdGuard API URL"
+msgstr ""
+
+msgid "AdGuard Username"
+msgstr ""
+
+msgid "AdGuard Password"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Pass"
+msgstr ""
+
+msgid "Fail"
+msgstr ""
+
+msgid "AdGuard process"
+msgstr ""
+
+msgid "Port 53 is AdGuard"
+msgstr ""
+
+msgid "LAN DHCP advertises this router as DNS"
+msgstr ""
+
+msgid "AdGuard API"
+msgstr ""
+
+msgid "Tailscale Accept DNS"
+msgstr ""
+
+msgid "Tailnet DNS health check"
+msgstr ""
+
+msgid "Enable AdGuard DNS Auto Switch"
+msgstr ""
+
+msgid "Only enable when all status checks pass."
+msgstr ""
+
+msgid "Health Check Domain is required before enabling AdGuard DNS auto switch."
+msgstr ""
+
+msgid "At least one Expected Health IP is required before enabling AdGuard DNS auto switch."
+msgstr ""
+
+msgid "At least one Default Upstream is required before enabling AdGuard DNS auto switch."
+msgstr ""
+
+msgid "At least one Tailnet Upstream is required before enabling AdGuard DNS auto switch."
+msgstr ""
+
+msgid "Accept DNS must be enabled before enabling AdGuard DNS auto switch."
+msgstr ""
+
+msgid "AdGuard DNS auto switch cannot be enabled until every environment status check passes."
+msgstr ""
+
+msgid "Default Upstreams"
+msgstr ""
+
+msgid "Used when Tailnet DNS is unhealthy."
+msgstr ""
+
+msgid "Tailnet Upstreams"
+msgstr ""
+
+msgid "Added when Tailnet DNS is healthy."
+msgstr ""
+
+msgid "Health Check Domain"
+msgstr ""
+
+msgid "Health Check DNS Server"
+msgstr ""
+
+msgid "Expected Health IPs"
+msgstr ""
+
+msgid "Check Interval"
+msgstr ""
+
+msgid "Success Threshold"
+msgstr ""
+
+msgid "Failure Threshold"
+msgstr ""
+
+msgid "Clear AdGuard Cache After Switch"
+msgstr ""

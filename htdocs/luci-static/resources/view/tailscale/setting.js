@@ -345,7 +345,41 @@ return view.extend({
 		o.rmempty = false;
 
 		s.tab('adguard_dns', _('AdGuard DNS'));
+		let adguardApiUrlOption, adguardUsernameOption, adguardPasswordOption;
 		let adguardDefaultUpstreamsOption, adguardTailnetUpstreamsOption, adguardHealthDomainOption, adguardHealthExpectedIpsOption;
+		const adguardCredentialsChanged = function(section_id) {
+			const currentApiUrl = String(uci.get('tailscale', 'settings', 'adguard_api_url') || 'http://127.0.0.1:3000');
+			const currentUsername = String(uci.get('tailscale', 'settings', 'adguard_username') || '');
+			const formApiUrl = String(adguardApiUrlOption.formvalue(section_id) || 'http://127.0.0.1:3000').trim();
+			const formUsername = String(adguardUsernameOption.formvalue(section_id) || '').trim();
+			const formPassword = String(adguardPasswordOption.formvalue(section_id) || '').trim();
+
+			return formApiUrl !== currentApiUrl || formUsername !== currentUsername || !!formPassword;
+		};
+
+		adguardApiUrlOption = s.taboption('adguard_dns', form.Value, 'adguard_api_url', _('AdGuard API URL'));
+		adguardApiUrlOption.default = 'http://127.0.0.1:3000';
+		adguardApiUrlOption.rmempty = false;
+
+		adguardUsernameOption = s.taboption('adguard_dns', form.Value, 'adguard_username', _('AdGuard Username'));
+		adguardUsernameOption.default = '';
+		adguardUsernameOption.rmempty = true;
+
+		adguardPasswordOption = s.taboption('adguard_dns', form.Value, 'adguard_password', _('AdGuard Password'));
+		adguardPasswordOption.password = true;
+		adguardPasswordOption.default = '';
+		adguardPasswordOption.rmempty = true;
+		adguardPasswordOption.placeholder = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
+		adguardPasswordOption.description = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
+		adguardPasswordOption.cfgvalue = function() {
+			return '';
+		};
+		adguardPasswordOption.write = function(section_id, value) {
+			value = (value || '').trim();
+			if (value)
+				return uci.set('tailscale', section_id, 'adguard_password', value);
+		};
+		adguardPasswordOption.remove = function() {};
 
 		o = s.taboption('adguard_dns', form.DummyValue, '_adguard_dns_status', _('Status'));
 		o.renderWidget = function() {
@@ -382,7 +416,8 @@ return view.extend({
 				return _('Accept DNS must be enabled before enabling AdGuard DNS auto switch.');
 
 			for (let i = 0; i < adguardEnvironmentChecks.length; i++) {
-				if (adguardPreflight[adguardEnvironmentChecks[i]] !== 'pass')
+				const check = adguardEnvironmentChecks[i];
+				if (adguardPreflight[check] !== 'pass' && !(check === 'adguard_api' && adguardCredentialsChanged(section_id)))
 					return _('AdGuard DNS auto switch cannot be enabled until every environment status check passes.');
 			}
 
@@ -426,30 +461,6 @@ return view.extend({
 		o = s.taboption('adguard_dns', form.Flag, 'adguard_clear_cache', _('Clear AdGuard Cache After Switch'));
 		o.default = o.enabled;
 		o.rmempty = false;
-
-		o = s.taboption('adguard_dns', form.Value, 'adguard_api_url', _('AdGuard API URL'));
-		o.default = 'http://127.0.0.1:3000';
-		o.rmempty = false;
-
-		o = s.taboption('adguard_dns', form.Value, 'adguard_username', _('AdGuard Username'));
-		o.default = '';
-		o.rmempty = true;
-
-		o = s.taboption('adguard_dns', form.Value, 'adguard_password', _('AdGuard Password'));
-		o.password = true;
-		o.default = '';
-		o.rmempty = true;
-		o.placeholder = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
-		o.description = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
-		o.cfgvalue = function() {
-			return '';
-		};
-		o.write = function(section_id, value) {
-			value = (value || '').trim();
-			if (value)
-				return uci.set('tailscale', section_id, 'adguard_password', value);
-		};
-		o.remove = function() {};
 
 		s.tab('extra', _('Extra Settings'));
 
