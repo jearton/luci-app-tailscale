@@ -73,6 +73,8 @@ assert_before "AdGuard Password" "_adguard_dns_status" htdocs/luci-static/resour
 assert_before "_adguard_dns_status" "Enable AdGuard DNS Auto Switch" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "adguardEnvironmentChecks" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "AdGuard DNS auto switch cannot be enabled until every environment status check passes." htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "keepalivePeerAliases" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "shortDnsName" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po

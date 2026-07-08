@@ -65,15 +65,22 @@ async function getStatus() {
 			.map(peer => {
 				const ip = Array.isArray(peer.TailscaleIPs) ? (peer.TailscaleIPs[0] || '') : '';
 				const dnsName = (peer.DNSName || '').replace(/\.$/, '');
+				const shortDnsName = dnsName.split('.', 1)[0] || '';
+				const hostName = peer.HostName || '';
+				const name = shortDnsName || hostName || dnsName || ip;
+				const displayName = (shortDnsName && hostName && shortDnsName !== hostName)
+					? [shortDnsName, '(' + hostName + ')'].join(' ')
+					: (shortDnsName || hostName || dnsName || ip);
 				const label = [
-					peer.HostName || dnsName || ip,
+					displayName,
 					ip,
 					peer.Online ? _('Online') : _('Offline')
 				].filter(Boolean).join('    ');
 
 				return {
-					name: peer.HostName || dnsName || ip,
-					label: label
+					name: name,
+					label: label,
+					aliases: [hostName, dnsName, shortDnsName, ip].filter(Boolean)
 				};
 			})
 			.filter(peer => peer.name);
@@ -313,14 +320,24 @@ return view.extend({
 
 		o = s.taboption('advance', form.MultiValue, 'keepalive_peers', _('Keepalive Peers'), _('Select peers that should be kept warm with periodic Tailscale pings.'));
 		const keepalivePeerNames = {};
+		const keepalivePeerAliases = {};
+		const keepalivePeersByName = {};
 		peers.forEach(function(peer) {
 			keepalivePeerNames[peer.name] = true;
+			keepalivePeersByName[peer.name] = peer;
+			(peer.aliases || []).forEach(function(alias) {
+				keepalivePeerAliases[alias] = peer.name;
+			});
 			o.value(peer.name, peer.label);
 		});
 		savedKeepalivePeers.forEach(function(peer) {
 			if (!keepalivePeerNames[peer]) {
+				const matchedName = keepalivePeerAliases[peer];
 				keepalivePeerNames[peer] = true;
-				o.value(peer, [peer, _('Not found')].join('    '));
+				if (matchedName && keepalivePeersByName[matchedName])
+					o.value(peer, keepalivePeersByName[matchedName].label);
+				else
+					o.value(peer, [peer, _('Not found')].join('    '));
 			}
 		});
 		if (Object.keys(keepalivePeerNames).length === 0) {
