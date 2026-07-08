@@ -40,28 +40,32 @@ if [ "$ACCEPT_DNS" = "1" ]; then
 	done
 fi
 
-# Configure a LuCI-visible network interface for Tailscale without letting
-# netifd reload the live tailscale0 device after tailscaled installs routes.
+# Configure a LuCI-visible wrapper for tailscale0. The address, policy rules,
+# and table 52 routes belong to tailscaled; netifd must not manage them.
 ts0=$(ifconfig | awk '/^tailscale/ { print $1; exit }' | tr -d :)
 ts4=$(tailscale ip -4)
-ts6=$(tailscale ip -6 2>/dev/null || true)
 [ -z "$ts0" ] && revert_exit "Failed to find Tailscale interface."
 [ -z "$ts4" ] && revert_exit "Failed to get Tailscale IPv4 address."
 
-if [ -z "$(uci -q get network.tailscale)" ]; then
+network_update=0
+[ "$(uci -q get network.tailscale)" = "interface" ] || network_update=1
+[ "$(uci -q get network.tailscale.proto)" = "none" ] || network_update=1
+[ "$(uci -q get network.tailscale.device)" = "$ts0" ] || network_update=1
+[ -z "$(uci -q get network.tailscale.ipaddr)" ] || network_update=1
+[ -z "$(uci -q get network.tailscale.netmask)" ] || network_update=1
+[ -z "$(uci -q get network.tailscale.ip6addr)" ] || network_update=1
+
+if [ "$network_update" = "1" ]; then
 	uci -q delete network.ts_lan
+	uci -q delete network.tailscale.ipaddr
+	uci -q delete network.tailscale.netmask
 	uci -q delete network.tailscale.ip6addr
 	[ -n "$(uci batch <<-EOF 2>&1
 		set network.tailscale='interface'
-		set network.tailscale.proto='static'
-		set network.tailscale.ipaddr='$ts4'
-		set network.tailscale.netmask='255.255.255.255'
+		set network.tailscale.proto='none'
 		set network.tailscale.device='$ts0'
 	EOF
 	)" ] && revert_exit "Failed to configure network interface for Tailscale."
-	if [ -n "$ts6" ]; then
-		uci add_list network.tailscale.ip6addr="$ts6" || revert_exit "Failed to configure Tailscale IPv6 address."
-	fi
 fi
 
 # Configure exit node firewall rules
@@ -108,7 +112,7 @@ if [ -n "$ACCESS" ]; then
 		set firewall.tszone.masq='$tszone_masq'
 		set firewall.tszone.mtu_fix='1'
 		set firewall.tszone.name='tailscale'
-		add_list firewall.tszone.device='$ts0'
+		add_list firewall.tszone.network='tailscale'
 	EOF
 	)" ] && revert_exit "Failed to create firewall zone and forwarding rules for Tailscale."
 fi
