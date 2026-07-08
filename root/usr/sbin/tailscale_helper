@@ -40,8 +40,8 @@ if [ "$ACCEPT_DNS" = "1" ]; then
 	done
 fi
 
-# Configure a LuCI-visible wrapper for tailscale0. The address, policy rules,
-# and table 52 routes belong to tailscaled; netifd must not manage them.
+# Configure a LuCI-visible wrapper for tailscale0. tailscaled still owns the
+# TUN device, policy rules, and table 52 routes; netifd only displays it.
 ts0=$(ifconfig | awk '/^tailscale/ { print $1; exit }' | tr -d :)
 ts4=$(tailscale ip -4)
 [ -z "$ts0" ] && revert_exit "Failed to find Tailscale interface."
@@ -49,20 +49,20 @@ ts4=$(tailscale ip -4)
 
 network_update=0
 [ "$(uci -q get network.tailscale)" = "interface" ] || network_update=1
-[ "$(uci -q get network.tailscale.proto)" = "tailscale" ] || network_update=1
+[ "$(uci -q get network.tailscale.proto)" = "static" ] || network_update=1
 [ "$(uci -q get network.tailscale.device)" = "$ts0" ] || network_update=1
-[ -z "$(uci -q get network.tailscale.ipaddr)" ] || network_update=1
-[ -z "$(uci -q get network.tailscale.netmask)" ] || network_update=1
+[ "$(uci -q get network.tailscale.ipaddr)" = "$ts4" ] || network_update=1
+[ "$(uci -q get network.tailscale.netmask)" = "255.255.255.255" ] || network_update=1
 [ -z "$(uci -q get network.tailscale.ip6addr)" ] || network_update=1
 
 if [ "$network_update" = "1" ]; then
 	uci -q delete network.ts_lan
-	uci -q delete network.tailscale.ipaddr
-	uci -q delete network.tailscale.netmask
 	uci -q delete network.tailscale.ip6addr
 	[ -n "$(uci batch <<-EOF 2>&1
 		set network.tailscale='interface'
-		set network.tailscale.proto='tailscale'
+		set network.tailscale.proto='static'
+		set network.tailscale.ipaddr='$ts4'
+		set network.tailscale.netmask='255.255.255.255'
 		set network.tailscale.device='$ts0'
 	EOF
 	)" ] && revert_exit "Failed to configure network interface for Tailscale."
@@ -113,6 +113,7 @@ if [ -n "$ACCESS" ]; then
 		set firewall.tszone.mtu_fix='1'
 		set firewall.tszone.name='tailscale'
 		add_list firewall.tszone.network='tailscale'
+		add_list firewall.tszone.device='tailscale0'
 	EOF
 	)" ] && revert_exit "Failed to create firewall zone and forwarding rules for Tailscale."
 fi
@@ -154,4 +155,4 @@ fi
 # Commit configuration changes and reload service
 [ -n "$(uci changes dhcp)" ] && uci commit dhcp && /etc/init.d/dnsmasq reload
 [ -n "$(uci changes network)" ] && uci commit network
-[ -n "$(uci changes firewall)" ] && uci commit firewall && /etc/init.d/firewall reload
+[ -n "$(uci changes firewall)" ] && uci commit firewall

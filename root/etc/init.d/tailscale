@@ -11,7 +11,6 @@ CONFIG_PATH=/var/lib/tailscale
 
 service_triggers() {
 	procd_add_reload_trigger "tailscale"
-	procd_add_interface_trigger "interface.*.up" wan /etc/init.d/tailscale reload
 }
 
 section_enabled() {
@@ -66,7 +65,6 @@ tailscale_helper() {
 		ACCESS="$access" \
 		DISABLE_SNAT_SUBNET_ROUTES="$disable_snat_subnet_routes"
 
-	procd_set_param respawn
 	procd_set_param stdout "$std_out"
 	procd_set_param stderr "$std_err"
 	procd_close_instance
@@ -151,26 +149,10 @@ stop_instance() {
 		uci -q del_list $suffix
 	done
  
-	# Keep network.tailscale as the LuCI/netifd control entry. It uses the
-	# tailscale proto handler and must remain present when the service is stopped.
-	uci -q delete network.ts_lan
-	for route in $(uci show network | grep 'network.ts_subnet[0-9]\+=route' | grep -o 'network.ts_subnet[0-9]\+'); do
-		uci -q delete $route
-	done
-	
-	# Remove firewall settings
-	index=$(uci show firewall | grep "firewall.@forwarding\[[0-9]\+\]\.src='lan'" -B 1 -A 1 | grep "firewall.@forwarding\[[0-9]\+\]\.dest='wan'" | grep -o '[0-9]\+')
-	uci -q delete firewall.@forwarding[$index].enabled
-	uci -q delete firewall.tszone
-	uci -q delete firewall.ts_ac_lan
-	uci -q delete firewall.ts_ac_wan
-	uci -q delete firewall.lan_ac_ts
-	uci -q delete firewall.wan_ac_ts
-	
-	# Commit configuration changes and reload service
+	# Keep LuCI-visible network/firewall configuration persistent. Tailscale owns
+	# tailscale0, policy rules, and table 52 routes; network/firewall reloads can
+	# transiently remove those routes while tailscaled is running.
 	[ -n "$(uci changes dhcp)" ] && uci commit dhcp && /etc/init.d/dnsmasq reload
-	[ -n "$(uci changes network)" ] && uci commit network
-	[ -n "$(uci changes firewall)" ] && uci commit firewall && /etc/init.d/firewall reload
 
 	/usr/sbin/tailscaled --cleanup
 
