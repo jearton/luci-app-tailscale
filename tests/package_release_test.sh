@@ -19,6 +19,14 @@ assert_contains() {
 	grep -F -- "$needle" "$ROOT_DIR/$file" >/dev/null || fail "$file should contain: $needle"
 }
 
+assert_not_contains() {
+	needle="$1"
+	file="$2"
+	if grep -F -- "$needle" "$ROOT_DIR/$file" >/dev/null; then
+		fail "$file should not contain: $needle"
+	fi
+}
+
 line_number() {
 	needle="$1"
 	file="$2"
@@ -63,7 +71,8 @@ assert_before "AdGuard API URL" "_adguard_dns_status" htdocs/luci-static/resourc
 assert_before "AdGuard Username" "_adguard_dns_status" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_before "AdGuard Password" "_adguard_dns_status" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_before "_adguard_dns_status" "Enable AdGuard DNS Auto Switch" htdocs/luci-static/resources/view/tailscale/setting.js
-assert_contains "adguardCredentialsChanged" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "adguardEnvironmentChecks" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "AdGuard DNS auto switch cannot be enabled until every environment status check passes." htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po

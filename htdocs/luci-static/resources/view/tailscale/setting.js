@@ -347,15 +347,6 @@ return view.extend({
 		s.tab('adguard_dns', _('AdGuard DNS'));
 		let adguardApiUrlOption, adguardUsernameOption, adguardPasswordOption;
 		let adguardDefaultUpstreamsOption, adguardTailnetUpstreamsOption, adguardHealthDomainOption, adguardHealthExpectedIpsOption;
-		const adguardCredentialsChanged = function(section_id) {
-			const currentApiUrl = String(uci.get('tailscale', 'settings', 'adguard_api_url') || 'http://127.0.0.1:3000');
-			const currentUsername = String(uci.get('tailscale', 'settings', 'adguard_username') || '');
-			const formApiUrl = String(adguardApiUrlOption.formvalue(section_id) || 'http://127.0.0.1:3000').trim();
-			const formUsername = String(adguardUsernameOption.formvalue(section_id) || '').trim();
-			const formPassword = String(adguardPasswordOption.formvalue(section_id) || '').trim();
-
-			return formApiUrl !== currentApiUrl || formUsername !== currentUsername || !!formPassword;
-		};
 
 		adguardApiUrlOption = s.taboption('adguard_dns', form.Value, 'adguard_api_url', _('AdGuard API URL'));
 		adguardApiUrlOption.default = 'http://127.0.0.1:3000';
@@ -414,12 +405,6 @@ return view.extend({
 
 			if (acceptDnsOption.formvalue(section_id) !== '1')
 				return _('Accept DNS must be enabled before enabling AdGuard DNS auto switch.');
-
-			for (let i = 0; i < adguardEnvironmentChecks.length; i++) {
-				const check = adguardEnvironmentChecks[i];
-				if (adguardPreflight[check] !== 'pass' && !(check === 'adguard_api' && adguardCredentialsChanged(section_id)))
-					return _('AdGuard DNS auto switch cannot be enabled until every environment status check passes.');
-			}
 
 			return true;
 		};
