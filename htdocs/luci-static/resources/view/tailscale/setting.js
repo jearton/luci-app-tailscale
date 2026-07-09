@@ -537,12 +537,8 @@ return view.extend({
 		adguardTailnetUpstreamsOption.default = '';
 		adguardTailnetUpstreamsOption.rmempty = true;
 
-		adguardHealthDomainOption = s.taboption('adguard_dns', form.Value, 'adguard_health_domain', _('Health Check Domain'));
+		adguardHealthDomainOption = s.taboption('adguard_dns', form.Value, 'adguard_health_domain', _('Health Check Domain'), _('Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected health IPs.'));
 		adguardHealthDomainOption.rmempty = true;
-
-		o = s.taboption('adguard_dns', form.Value, 'adguard_health_dns', _('Health Check DNS Server'));
-		o.default = '100.100.100.100';
-		o.rmempty = false;
 
 		adguardHealthExpectedIpsOption = s.taboption('adguard_dns', form.DynamicList, 'adguard_health_expected_ips', _('Expected Health IPs'));
 		adguardHealthExpectedIpsOption.default = '';
@@ -561,10 +557,6 @@ return view.extend({
 		o = s.taboption('adguard_dns', form.Value, 'adguard_failure_threshold', _('Failure Threshold'));
 		o.datatype = 'uinteger';
 		o.default = '2';
-		o.rmempty = false;
-
-		o = s.taboption('adguard_dns', form.Flag, 'adguard_clear_cache', _('Clear AdGuard Cache After Switch'));
-		o.default = o.enabled;
 		o.rmempty = false;
 
 		s.tab('extra', _('Extra Settings'));

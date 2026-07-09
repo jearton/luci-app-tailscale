@@ -98,8 +98,16 @@ assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard 用户名"' po/zh_Hans/tailscale.po
-assert_contains 'msgid "Health Check DNS Server"' po/zh_Hans/tailscale.po
-assert_contains 'msgstr "健康检查 DNS 服务器"' po/zh_Hans/tailscale.po
+assert_contains "100.100.100.100" root/usr/sbin/tailscale_adguard_dns_switch
+assert_contains "100.100.100.100" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "adguard_health_dns" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "Health Check DNS Server" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "adguard_health_dns" root/etc/config/tailscale
+assert_not_contains "adguard_clear_cache" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "Clear AdGuard Cache After Switch" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "adguard_clear_cache" root/etc/config/tailscale
+assert_not_contains 'msgid "Health Check DNS Server"' po/zh_Hans/tailscale.po
+assert_not_contains 'msgid "Clear AdGuard Cache After Switch"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Configured; leave blank to keep existing value."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "已配置；留空则保留现有值。"' po/zh_Hans/tailscale.po
 assert_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json

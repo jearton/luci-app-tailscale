@@ -52,9 +52,8 @@ config tailscale 'settings'
 	# AdGuard upstreams to prepend when tailnet DNS health checks pass
 	list adguard_tailnet_upstreams '[/litata.tailnet/]100.100.100.100'
 	list adguard_tailnet_upstreams '[/litata.com/]100.100.100.100'
-	# Domain and expected IPs for tailnet DNS health checks; fill both before enabling
+	# Domain and expected IPs for tailnet DNS health checks through 100.100.100.100; fill both before enabling
 	#option adguard_health_domain ''
-	option adguard_health_dns '100.100.100.100'
 	# Add at least one expected IP before enabling the AdGuard DNS switch
 	#list adguard_health_expected_ips ''
 	# Seconds between AdGuard DNS health checks
@@ -62,8 +61,6 @@ config tailscale 'settings'
 	# Consecutive health check results required before switching profiles
 	option adguard_success_threshold '2'
 	option adguard_failure_threshold '2'
-	# Clear AdGuard DNS cache after switching upstream profiles
-	option adguard_clear_cache '1'
 	# AdGuard Home API endpoint and optional credentials
 	option adguard_api_url 'http://127.0.0.1:3000'
 	#option adguard_username ''

@@ -46,11 +46,9 @@ case "$*" in
 	"-q get tailscale.settings.adguard_username") echo "${UCI_API_USER:-}" ;;
 	"-q get tailscale.settings.adguard_password") echo "${UCI_API_PASS:-}" ;;
 	"-q get tailscale.settings.adguard_health_domain") echo "${UCI_HEALTH_DOMAIN:-sso.litata.com}" ;;
-	"-q get tailscale.settings.adguard_health_dns") echo "${UCI_HEALTH_DNS:-100.100.100.100}" ;;
 	"-q get tailscale.settings.adguard_check_interval") echo "${UCI_CHECK_INTERVAL:-10}" ;;
 	"-q get tailscale.settings.adguard_success_threshold") echo "${UCI_SUCCESS_THRESHOLD:-2}" ;;
 	"-q get tailscale.settings.adguard_failure_threshold") echo "${UCI_FAILURE_THRESHOLD:-2}" ;;
-	"-q get tailscale.settings.adguard_clear_cache") echo "${UCI_CLEAR_CACHE:-1}" ;;
 	"-q get tailscale.settings.adguard_default_upstreams")
 		[ "${UCI_EMPTY_DEFAULT_UPSTREAMS:-0}" = "1" ] && exit 1
 		echo "[/lan/]127.0.0.1:5353 223.5.5.5 100.100.100.100 119.29.29.29 223.5.5.5"
@@ -82,6 +80,7 @@ make_fake_commands() {
 
 	cat >"$TMP_DIR/nslookup" <<'SH'
 #!/bin/sh
+printf '%s\n' "$*" >>"${NSLOOKUP_LOG:?}"
 if [ "${NSLOOKUP_HEALTH:-ok}" = "ok" ]; then
 	cat <<'OUT'
 Server:		100.100.100.100
@@ -186,9 +185,10 @@ prepare_api_json() {
 	POSTED_JSON="$TMP_DIR/posted.json"
 	TEST_UPSTREAM_JSON="$TMP_DIR/test-upstream.json"
 	JQ_LOG="$TMP_DIR/jq.log"
+	NSLOOKUP_LOG="$TMP_DIR/nslookup-call.log"
 	REAL_JQ="${REAL_JQ:-$(command -v jq)}"
 	STATE_DIR="$TMP_DIR/state"
-	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG REAL_JQ STATE_DIR
+	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG NSLOOKUP_LOG REAL_JQ STATE_DIR
 
 	cat >"$DNS_INFO_JSON" <<'JSON'
 {"upstream_dns":["1.1.1.1"],"bootstrap_dns":["223.5.5.5"],"fallback_dns":["119.29.29.29"],"cache_enabled":false,"cache_size":4194304}
@@ -224,6 +224,8 @@ test_profile_generation() {
 
 test_health_check() {
 	NSLOOKUP_HEALTH=ok run_script --check-health >/dev/null
+	nslookup_call="$(cat "$TMP_DIR/nslookup-call.log")"
+	assert_contains "sso.litata.com 100.100.100.100" "$nslookup_call" "health check must use hard-coded Tailscale DNS"
 	if NSLOOKUP_HEALTH=fail run_script --check-health >/dev/null 2>&1; then
 		fail "failed nslookup must make health check fail"
 	fi
@@ -260,6 +262,7 @@ test_apply_profile_preserves_dns_info() {
 	assert_contains "--rawfile upstreams" "$(cat "$JQ_LOG")" "profile application should use jq with raw upstream file input"
 	assert_contains "--connect-timeout 3" "$(cat "$CURL_LOG")" "curl calls should include a connect timeout"
 	assert_contains "--max-time 10" "$(cat "$CURL_LOG")" "curl calls should include a max time"
+	assert_contains "/control/cache_clear" "$(cat "$CURL_LOG")" "profile application should always clear AdGuard cache after switching"
 }
 
 test_empty_profile_does_not_write_dns_config() {

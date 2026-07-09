@@ -94,12 +94,7 @@ health_domain() {
 }
 
 health_dns() {
-	dns="$(uci_get adguard_health_dns)"
-	if [ -n "$dns" ]; then
-		printf '%s\n' "$dns"
-	else
-		printf '%s\n' "100.100.100.100"
-	fi
+	printf '%s\n' "100.100.100.100"
 }
 
 output_has_ip() {
@@ -249,10 +244,8 @@ apply_profile() {
 		return 1
 	}
 
-	if [ "$(uci_get adguard_clear_cache)" = "1" ]; then
-		curl_post_json "/control/cache_clear" /dev/null >/dev/null 2>&1 || \
-			log_msg daemon.warn "AdGuard cache clear failed after $profile profile switch"
-	fi
+	curl_post_json "/control/cache_clear" /dev/null >/dev/null 2>&1 || \
+		log_msg daemon.warn "AdGuard cache clear failed after $profile profile switch"
 
 	printf '%s\n' "$profile" >"$STATE_DIR/current_profile"
 	log_msg daemon.info "applied AdGuard DNS $profile profile"

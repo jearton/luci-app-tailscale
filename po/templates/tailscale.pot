@@ -422,7 +422,7 @@ msgstr ""
 msgid "Health Check Domain"
 msgstr ""
 
-msgid "Health Check DNS Server"
+msgid "Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected health IPs."
 msgstr ""
 
 msgid "Expected Health IPs"
@@ -435,7 +435,4 @@ msgid "Success Threshold"
 msgstr ""
 
 msgid "Failure Threshold"
-msgstr ""
-
-msgid "Clear AdGuard Cache After Switch"
 msgstr ""

@@ -428,8 +428,8 @@ msgstr "Tailnet DNS 健康時追加使用。"
 msgid "Health Check Domain"
 msgstr "健康檢查網域"
 
-msgid "Health Check DNS Server"
-msgstr "健康檢查 DNS 伺服器"
+msgid "Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected health IPs."
+msgstr "透過 Tailscale DNS 100.100.100.100 解析，結果必須匹配任一預期健康 IP。"
 
 msgid "Expected Health IPs"
 msgstr "預期健康 IP"
@@ -442,6 +442,3 @@ msgstr "成功閾值"
 
 msgid "Failure Threshold"
 msgstr "失敗閾值"
-
-msgid "Clear AdGuard Cache After Switch"
-msgstr "切換後清理 AdGuard 快取"
