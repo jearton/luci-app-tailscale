@@ -77,6 +77,14 @@ assert_contains "keepalivePeerAliases" htdocs/luci-static/resources/view/tailsca
 assert_contains "shortDnsName" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "hasSubnetRoutes" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "No subnet routes" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "s.tab('keepalive'" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "keepalive-peer-list" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "form.MultiValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains 'msgid "Keepalive"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "保活"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Subnets"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "子网"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po

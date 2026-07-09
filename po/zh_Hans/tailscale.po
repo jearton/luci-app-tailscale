@@ -314,6 +314,9 @@ msgstr "离线"
 msgid "Not found"
 msgstr "未找到"
 
+msgid "Keepalive"
+msgstr "保活"
+
 msgid "Peer Keepalive"
 msgstr "对端保活"
 
@@ -331,6 +334,9 @@ msgstr "没有可用对端"
 
 msgid "No subnet routes"
 msgstr "未发布子网路由"
+
+msgid "Subnets"
+msgstr "子网"
 
 msgid "Keepalive Interval"
 msgstr "保活间隔"

@@ -308,6 +308,9 @@ msgstr ""
 msgid "Not found"
 msgstr ""
 
+msgid "Keepalive"
+msgstr ""
+
 msgid "Peer Keepalive"
 msgstr ""
 
@@ -324,6 +327,9 @@ msgid "No Available Peers"
 msgstr ""
 
 msgid "No subnet routes"
+msgstr ""
+
+msgid "Subnets"
 msgstr ""
 
 msgid "Keepalive Interval"

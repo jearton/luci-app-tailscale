@@ -73,16 +73,21 @@ async function getStatus() {
 				const displayName = (shortDnsName && hostName && shortDnsName !== hostName)
 					? [shortDnsName, '(' + hostName + ')'].join(' ')
 					: (shortDnsName || hostName || dnsName || ip);
+				const onlineLabel = peer.Online ? _('Online') : _('Offline');
 				const label = [
 					displayName,
 					ip,
-					peer.Online ? _('Online') : _('Offline'),
+					onlineLabel,
 					routes.join(', ')
 				].filter(Boolean).join('    ');
 
 				return {
 					name: name,
 					label: label,
+					displayName: displayName,
+					ip: ip,
+					onlineLabel: onlineLabel,
+					routes: routes,
 					hasSubnetRoutes: hasSubnetRoutes,
 					aliases: [hostName, dnsName, shortDnsName, ip].filter(Boolean)
 				};
@@ -318,12 +323,14 @@ return view.extend({
 		o.default = "ts_ac_lan ts_ac_wan lan_ac_ts";
 		o.rmempty = true;
 
-		o = s.taboption('advance', form.Flag, 'keepalive_enabled', _('Peer Keepalive'), _('Periodically send lightweight Tailscale pings to selected peers.'));
+		s.tab('keepalive', _('Keepalive'));
+
+		o = s.taboption('keepalive', form.Flag, 'keepalive_enabled', _('Peer Keepalive'), _('Periodically send lightweight Tailscale pings to selected peers.'));
 		o.default = o.disabled;
 		o.rmempty = false;
 
-		o = s.taboption('advance', form.MultiValue, 'keepalive_peers', _('Keepalive Peers'), _('Select peers that should be kept warm with periodic Tailscale pings.'));
-		const keepalivePeerNames = {};
+		const keepalivePeerChoices = [];
+		const keepalivePeerChoiceNames = {};
 		const keepalivePeerAliases = {};
 		const keepalivePeersByName = {};
 		peers.forEach(function(peer) {
@@ -331,44 +338,123 @@ return view.extend({
 			(peer.aliases || []).forEach(function(alias) {
 				keepalivePeerAliases[alias] = peer.name;
 			});
+		});
 
+		const selectedKeepalivePeers = {};
+		savedKeepalivePeers.forEach(function(peer) {
+			const matchedName = keepalivePeerAliases[peer];
+			if (matchedName && keepalivePeersByName[matchedName] && keepalivePeersByName[matchedName].hasSubnetRoutes)
+				selectedKeepalivePeers[matchedName] = true;
+			else
+				selectedKeepalivePeers[peer] = true;
+		});
+
+		peers.forEach(function(peer) {
 			if (!peer.hasSubnetRoutes)
 				return;
 
-			keepalivePeerNames[peer.name] = true;
-			o.value(peer.name, peer.label);
+			keepalivePeerChoiceNames[peer.name] = true;
+			keepalivePeerChoices.push({
+				value: peer.name,
+				peer: peer
+			});
 		});
+
 		savedKeepalivePeers.forEach(function(peer) {
-			if (!keepalivePeerNames[peer]) {
-				const matchedName = keepalivePeerAliases[peer];
-				keepalivePeerNames[peer] = true;
-				if (matchedName && keepalivePeersByName[matchedName]) {
-					const matchedPeer = keepalivePeersByName[matchedName];
-					const label = matchedPeer.hasSubnetRoutes
-						? matchedPeer.label
-						: [matchedPeer.label, _('No subnet routes')].join('    ');
-					o.value(peer, label);
-				}
-				else
-					o.value(peer, [peer, _('Not found')].join('    '));
+			const matchedName = keepalivePeerAliases[peer];
+			const matchedPeer = matchedName ? keepalivePeersByName[matchedName] : null;
+
+			if (matchedPeer && matchedPeer.hasSubnetRoutes)
+				return;
+
+			if (keepalivePeerChoiceNames[peer])
+				return;
+
+			keepalivePeerChoiceNames[peer] = true;
+			if (matchedPeer) {
+				keepalivePeerChoices.push({
+					value: peer,
+					peer: matchedPeer,
+					warning: _('No subnet routes')
+				});
+			}
+			else {
+				keepalivePeerChoices.push({
+					value: peer,
+					peer: {
+						displayName: peer,
+						ip: '',
+						onlineLabel: '',
+						routes: []
+					},
+					warning: _('Not found')
+				});
 			}
 		});
-		if (Object.keys(keepalivePeerNames).length === 0) {
-			o.value('', _('No Available Peers'));
-			o.readonly = true;
-		} else {
-			o.default = savedKeepalivePeers.join(' ');
-		}
-		o.depends('keepalive_enabled', '1');
-		o.rmempty = true;
 
-		o = s.taboption('advance', form.Value, 'keepalive_interval', _('Keepalive Interval'), _('Seconds between keepalive probes.'));
+		o = s.taboption('keepalive', form.AbstractValue, 'keepalive_peers', _('Keepalive Peers'), _('Select peers that should be kept warm with periodic Tailscale pings.'));
+		o.rmempty = true;
+		o.cfgvalue = function() {
+			return savedKeepalivePeers;
+		};
+		o.formvalue = function(section_id) {
+			const node = document.getElementById(this.cbid(section_id));
+			const values = node ? Array.from(node.querySelectorAll('input[type="checkbox"]:checked')).map(function(input) {
+				return input.value;
+			}) : [];
+			return values.length ? values : '';
+		};
+		o.renderWidget = function(section_id) {
+			const disabled = (this.readonly != null) ? this.readonly : this.map.readonly;
+			if (keepalivePeerChoices.length === 0) {
+				return E('div', {
+					id: this.cbid(section_id),
+					class: 'keepalive-peer-list'
+				}, E('em', _('No Available Peers')));
+			}
+
+			return E('div', {
+				id: this.cbid(section_id),
+				class: 'keepalive-peer-list',
+				style: 'display:grid;gap:8px;max-width:820px'
+			}, keepalivePeerChoices.map(function(choice, index) {
+				const peer = choice.peer;
+				const meta = [peer.ip, peer.onlineLabel].filter(Boolean).join(' | ');
+				const checkboxId = '%s.%d'.format(this.cbid(section_id), index);
+
+				return E('label', {
+					'for': checkboxId,
+					class: 'keepalive-peer-item',
+					style: 'display:grid;grid-template-columns:24px 1fr;gap:10px;padding:10px 12px;border:1px solid #d8dee5;border-radius:6px;cursor:pointer'
+				}, [
+					E('input', {
+						id: checkboxId,
+						type: 'checkbox',
+						value: choice.value,
+						checked: selectedKeepalivePeers[choice.value] ? 'checked' : null,
+						disabled: disabled ? 'disabled' : null,
+						style: 'margin-top:2px'
+					}),
+					E('span', {}, [
+						E('strong', {}, peer.displayName || choice.value),
+						meta ? E('span', { style: 'display:block;color:#687586;font-size:12px;margin-top:2px' }, meta) : '',
+						(peer.routes || []).length ? E('span', { style: 'display:block;color:#687586;font-size:12px;margin-top:2px' }, [
+							_('Subnets'), ': ', peer.routes.join(', ')
+						]) : '',
+						choice.warning ? E('span', { style: 'display:block;color:#b7791f;font-size:12px;margin-top:2px' }, choice.warning) : ''
+					])
+				]);
+			}, this));
+		};
+		o.depends('keepalive_enabled', '1');
+
+		o = s.taboption('keepalive', form.Value, 'keepalive_interval', _('Keepalive Interval'), _('Seconds between keepalive probes.'));
 		o.datatype = 'uinteger';
 		o.default = '20';
 		o.depends('keepalive_enabled', '1');
 		o.rmempty = false;
 
-		o = s.taboption('advance', form.Value, 'keepalive_failure_log_interval', _('Failure Log Interval'), _('Seconds between repeated failure log messages for the same peer.'));
+		o = s.taboption('keepalive', form.Value, 'keepalive_failure_log_interval', _('Failure Log Interval'), _('Seconds between repeated failure log messages for the same peer.'));
 		o.datatype = 'uinteger';
 		o.default = '300';
 		o.depends('keepalive_enabled', '1');
