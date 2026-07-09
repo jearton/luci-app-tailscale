@@ -415,16 +415,17 @@ return view.extend({
 				return E('div', {
 					id: this.cbid(section_id),
 					class: 'keepalive-peer-list',
-					style: 'display:grid;gap:8px;max-width:820px'
+					style: 'display:grid;gap:4px;max-width:820px'
 				}, keepalivePeerChoices.map(function(choice, index) {
 					const peer = choice.peer;
-					const meta = [peer.ip, peer.onlineLabel].filter(Boolean).join(' | ');
+					const meta = [peer.ip, peer.onlineLabel].filter(Boolean).join(' / ');
 					const checkboxId = '%s.%d'.format(this.cbid(section_id), index);
+					const routes = (peer.routes || []).length ? '%s: %s'.format(_('Subnets'), peer.routes.join(', ')) : '';
 
 					return E('label', {
 						'for': checkboxId,
-						class: 'keepalive-peer-item',
-						style: 'display:grid;grid-template-columns:24px 1fr;gap:10px;padding:10px 12px;border:1px solid #d8dee5;border-radius:6px;cursor:pointer'
+						class: 'keepalive-peer-row',
+						style: 'display:grid;grid-template-columns:24px minmax(160px,1fr) auto;gap:8px;align-items:center;padding:5px 8px;border:1px solid #d8dee5;border-radius:4px;cursor:pointer'
 					}, [
 						E('input', {
 							id: checkboxId,
@@ -432,22 +433,22 @@ return view.extend({
 							value: choice.value,
 							checked: selectedKeepalivePeers[choice.value] ? 'checked' : null,
 							disabled: disabled ? 'disabled' : null,
-							style: 'margin-top:2px'
+							style: 'margin:0'
 						}),
 						E('span', {}, [
 							E('strong', {}, peer.displayName || choice.value),
-							meta ? E('span', { style: 'display:block;color:#687586;font-size:12px;margin-top:2px' }, meta) : '',
-							(peer.routes || []).length ? E('span', { style: 'display:block;color:#687586;font-size:12px;margin-top:2px' }, [
-								_('Subnets'), ': ', peer.routes.join(', ')
-							]) : '',
-							choice.warning ? E('span', { style: 'display:block;color:#b7791f;font-size:12px;margin-top:2px' }, choice.warning) : ''
+							meta ? E('span', { style: 'color:#687586;font-size:12px;margin-left:8px' }, meta) : ''
+						]),
+						E('span', { style: 'color:#687586;font-size:12px;text-align:right;white-space:normal' }, [
+							routes,
+							choice.warning ? E('span', { style: routes ? 'color:#b7791f;margin-left:8px' : 'color:#b7791f' }, choice.warning) : ''
 						])
 					]);
 				}, this));
 			}
 		});
 
-		o = s.taboption('keepalive', KeepalivePeersValue, 'keepalive_peers', _('Keepalive Peers'), _('Select peers that should be kept warm with periodic Tailscale pings.'));
+		o = s.taboption('keepalive', KeepalivePeersValue, 'keepalive_peers', _('Keepalive Peers'), _('Only peers advertising subnet routes are shown. Selected peers are periodically pinged to keep cross-subnet paths active.'));
 		o.rmempty = true;
 		o.depends('keepalive_enabled', '1');
 

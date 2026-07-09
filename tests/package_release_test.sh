@@ -81,12 +81,19 @@ assert_contains "s.tab('keepalive'" htdocs/luci-static/resources/view/tailscale/
 assert_contains "form.Value.extend" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "KeepalivePeersValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "keepalive-peer-list" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "Only peers advertising subnet routes are shown" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "keepalive-peer-row" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "grid-template-columns:24px minmax(160px,1fr) auto" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "padding:10px 12px" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "grid-template-columns:24px 1fr" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "form.MultiValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "Keepalive"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "保活"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Subnets"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "子网"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Only peers advertising subnet routes are shown. Selected peers are periodically pinged to keep cross-subnet paths active."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "仅显示对端也发布了子网路由的设备；选中的设备会被定时 Tailscale ping，用于保持跨子网路由路径活跃。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po

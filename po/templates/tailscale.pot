@@ -320,7 +320,7 @@ msgstr ""
 msgid "Keepalive Peers"
 msgstr ""
 
-msgid "Select peers that should be kept warm with periodic Tailscale pings."
+msgid "Only peers advertising subnet routes are shown. Selected peers are periodically pinged to keep cross-subnet paths active."
 msgstr ""
 
 msgid "No Available Peers"
