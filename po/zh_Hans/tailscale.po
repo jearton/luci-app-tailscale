@@ -44,9 +44,12 @@ msgid "Auth Key"
 msgstr "认证密钥"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:267
+msgid "Configured"
+msgstr "已配置"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:268
-msgid "Configured; leave blank to keep existing value."
-msgstr "已配置；留空则保留现有值。"
+msgid "Leave blank to keep the existing auth key; enter a new value to replace it."
+msgstr "留空则保留现有认证密钥；填写新值则覆盖。"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:248
 msgid "Available flags"
@@ -361,6 +364,9 @@ msgstr "AdGuard 用户名"
 
 msgid "AdGuard Password"
 msgstr "AdGuard 密码"
+
+msgid "Leave blank to keep the existing AdGuard password; enter a new value to replace it."
+msgstr "留空则保留现有 AdGuard 密码；填写新值则覆盖。"
 
 msgid "Status"
 msgstr "状态"

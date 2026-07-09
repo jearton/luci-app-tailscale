@@ -108,8 +108,18 @@ assert_not_contains "Clear AdGuard Cache After Switch" htdocs/luci-static/resour
 assert_not_contains "adguard_clear_cache" root/etc/config/tailscale
 assert_not_contains 'msgid "Health Check DNS Server"' po/zh_Hans/tailscale.po
 assert_not_contains 'msgid "Clear AdGuard Cache After Switch"' po/zh_Hans/tailscale.po
-assert_contains 'msgid "Configured; leave blank to keep existing value."' po/zh_Hans/tailscale.po
-assert_contains 'msgstr "已配置；留空则保留现有值。"' po/zh_Hans/tailscale.po
+assert_contains "placeholder = hasAdguardPassword ? _('Configured') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "placeholder = hasAuthKey ? _('Configured') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "Leave blank to keep the existing AdGuard password; enter a new value to replace it." htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "Leave blank to keep the existing auth key; enter a new value to replace it." htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "placeholder = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "placeholder = hasAuthKey ? _('Configured; leave blank to keep existing value.') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains 'msgid "Configured"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "已配置"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Leave blank to keep the existing AdGuard password; enter a new value to replace it."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "留空则保留现有 AdGuard 密码；填写新值则覆盖。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Leave blank to keep the existing auth key; enter a new value to replace it."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "留空则保留现有认证密钥；填写新值则覆盖。"' po/zh_Hans/tailscale.po
 assert_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains "PROG=/usr/sbin/tailscale_adguard_dns_switch" root/etc/init.d/tailscale-adguard-dns
 

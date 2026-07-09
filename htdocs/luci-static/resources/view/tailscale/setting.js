@@ -480,8 +480,8 @@ return view.extend({
 		adguardPasswordOption.password = true;
 		adguardPasswordOption.default = '';
 		adguardPasswordOption.rmempty = true;
-		adguardPasswordOption.placeholder = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
-		adguardPasswordOption.description = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : '';
+		adguardPasswordOption.placeholder = hasAdguardPassword ? _('Configured') : '';
+		adguardPasswordOption.description = _('Leave blank to keep the existing AdGuard password; enter a new value to replace it.');
 		adguardPasswordOption.cfgvalue = function() {
 			return '';
 		};
@@ -582,8 +582,8 @@ return view.extend({
 		o.password = true;
 		o.default = '';
 		o.rmempty = true;
-		o.placeholder = hasAuthKey ? _('Configured; leave blank to keep existing value.') : '';
-		o.description = hasAuthKey ? _('Configured; leave blank to keep existing value.') : '';
+		o.placeholder = hasAuthKey ? _('Configured') : '';
+		o.description = _('Leave blank to keep the existing auth key; enter a new value to replace it.');
 		o.cfgvalue = function() {
 			return '';
 		};
