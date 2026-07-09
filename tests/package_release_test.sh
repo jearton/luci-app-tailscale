@@ -78,8 +78,10 @@ assert_contains "shortDnsName" htdocs/luci-static/resources/view/tailscale/setti
 assert_contains "hasSubnetRoutes" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "No subnet routes" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "s.tab('keepalive'" htdocs/luci-static/resources/view/tailscale/setting.js
-assert_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "form.Value.extend" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "KeepalivePeersValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "keepalive-peer-list" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "form.MultiValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "Keepalive"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "保活"' po/zh_Hans/tailscale.po
