@@ -329,6 +329,9 @@ msgstr "选择需要通过定时 Tailscale ping 保持路径活跃的对端。"
 msgid "No Available Peers"
 msgstr "没有可用对端"
 
+msgid "No subnet routes"
+msgstr "未发布子网路由"
+
 msgid "Keepalive Interval"
 msgstr "保活间隔"
 

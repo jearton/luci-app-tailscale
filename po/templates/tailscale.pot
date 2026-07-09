@@ -323,6 +323,9 @@ msgstr ""
 msgid "No Available Peers"
 msgstr ""
 
+msgid "No subnet routes"
+msgstr ""
+
 msgid "Keepalive Interval"
 msgstr ""
 

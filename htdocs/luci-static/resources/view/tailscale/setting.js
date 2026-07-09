@@ -68,18 +68,22 @@ async function getStatus() {
 				const shortDnsName = dnsName.split('.', 1)[0] || '';
 				const hostName = peer.HostName || '';
 				const name = shortDnsName || hostName || dnsName || ip;
+				const routes = Array.isArray(peer.PrimaryRoutes) ? peer.PrimaryRoutes : [];
+				const hasSubnetRoutes = routes.length > 0;
 				const displayName = (shortDnsName && hostName && shortDnsName !== hostName)
 					? [shortDnsName, '(' + hostName + ')'].join(' ')
 					: (shortDnsName || hostName || dnsName || ip);
 				const label = [
 					displayName,
 					ip,
-					peer.Online ? _('Online') : _('Offline')
+					peer.Online ? _('Online') : _('Offline'),
+					routes.join(', ')
 				].filter(Boolean).join('    ');
 
 				return {
 					name: name,
 					label: label,
+					hasSubnetRoutes: hasSubnetRoutes,
 					aliases: [hostName, dnsName, shortDnsName, ip].filter(Boolean)
 				};
 			})
@@ -323,19 +327,28 @@ return view.extend({
 		const keepalivePeerAliases = {};
 		const keepalivePeersByName = {};
 		peers.forEach(function(peer) {
-			keepalivePeerNames[peer.name] = true;
 			keepalivePeersByName[peer.name] = peer;
 			(peer.aliases || []).forEach(function(alias) {
 				keepalivePeerAliases[alias] = peer.name;
 			});
+
+			if (!peer.hasSubnetRoutes)
+				return;
+
+			keepalivePeerNames[peer.name] = true;
 			o.value(peer.name, peer.label);
 		});
 		savedKeepalivePeers.forEach(function(peer) {
 			if (!keepalivePeerNames[peer]) {
 				const matchedName = keepalivePeerAliases[peer];
 				keepalivePeerNames[peer] = true;
-				if (matchedName && keepalivePeersByName[matchedName])
-					o.value(peer, keepalivePeersByName[matchedName].label);
+				if (matchedName && keepalivePeersByName[matchedName]) {
+					const matchedPeer = keepalivePeersByName[matchedName];
+					const label = matchedPeer.hasSubnetRoutes
+						? matchedPeer.label
+						: [matchedPeer.label, _('No subnet routes')].join('    ');
+					o.value(peer, label);
+				}
 				else
 					o.value(peer, [peer, _('Not found')].join('    '));
 			}

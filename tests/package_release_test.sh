@@ -75,6 +75,8 @@ assert_contains "adguardEnvironmentChecks" htdocs/luci-static/resources/view/tai
 assert_not_contains "AdGuard DNS auto switch cannot be enabled until every environment status check passes." htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "keepalivePeerAliases" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "shortDnsName" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "hasSubnetRoutes" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "No subnet routes" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po
