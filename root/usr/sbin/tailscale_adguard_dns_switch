@@ -315,6 +315,20 @@ preflight() {
 	[ "$ready" = "pass" ]
 }
 
+startup_preflight() {
+	for item in adguard_process port_53_adguard dhcp_advertises_lan_dns adguard_api accept_dns; do
+		case "$item" in
+			adguard_process) "$PGREP_CMD" -f AdGuardHome >/dev/null 2>&1 ;;
+			port_53_adguard) check_port_53_adguard ;;
+			dhcp_advertises_lan_dns) check_dhcp_option ;;
+			adguard_api) check_adguard_api ;;
+			accept_dns) [ "$(uci_get accept_dns)" = "1" ] ;;
+		esac
+
+		[ "$?" -eq 0 ] || return 1
+	done
+}
+
 valid_positive_number() {
 	case "$1" in
 		''|*[!0-9]*) return 1 ;;
@@ -329,7 +343,7 @@ run_loop() {
 		return 0
 	}
 
-	preflight >/dev/null || {
+	startup_preflight >/dev/null || {
 		log_msg daemon.err "AdGuard DNS auto switch preflight failed"
 		return 1
 	}

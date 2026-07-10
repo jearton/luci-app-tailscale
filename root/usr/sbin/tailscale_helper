@@ -115,4 +115,4 @@ fi
 # Commit configuration changes and reload service
 [ -n "$(uci changes dhcp)" ] && uci commit dhcp && /etc/init.d/dnsmasq reload
 [ -n "$(uci changes network)" ] && uci commit network
-[ -n "$(uci changes firewall)" ] && uci commit firewall
+[ -n "$(uci changes firewall)" ] && uci commit firewall && /etc/init.d/firewall reload

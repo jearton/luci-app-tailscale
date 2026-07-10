@@ -142,6 +142,14 @@ printf '%s\n' "$*" >>"${LOGGER_LOG:?}"
 SH
 	chmod +x "$TMP_DIR/logger"
 
+	cat >"$TMP_DIR/sleep" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${SLEEP_LOG:?}"
+kill -TERM "$PPID"
+exit 0
+SH
+	chmod +x "$TMP_DIR/sleep"
+
 	cat >"$TMP_DIR/pgrep" <<'SH'
 #!/bin/sh
 [ "${PGREP_ADGUARD:-1}" = "1" ] && exit 0
@@ -186,9 +194,10 @@ prepare_api_json() {
 	TEST_UPSTREAM_JSON="$TMP_DIR/test-upstream.json"
 	JQ_LOG="$TMP_DIR/jq.log"
 	NSLOOKUP_LOG="$TMP_DIR/nslookup-call.log"
+	SLEEP_LOG="$TMP_DIR/sleep.log"
 	REAL_JQ="${REAL_JQ:-$(command -v jq)}"
 	STATE_DIR="$TMP_DIR/state"
-	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG NSLOOKUP_LOG REAL_JQ STATE_DIR
+	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG NSLOOKUP_LOG SLEEP_LOG REAL_JQ STATE_DIR
 
 	cat >"$DNS_INFO_JSON" <<'JSON'
 {"upstream_dns":["1.1.1.1"],"bootstrap_dns":["223.5.5.5"],"fallback_dns":["119.29.29.29"],"cache_enabled":false,"cache_size":4194304}
@@ -204,6 +213,7 @@ run_script() {
 	NETSTAT_CMD="$TMP_DIR/netstat" \
 	UBUS_CMD="$TMP_DIR/ubus" \
 	JQ_CMD="$TMP_DIR/jq" \
+	SLEEP_CMD="$TMP_DIR/sleep" \
 	"$SCRIPT" "$@"
 }
 
@@ -280,6 +290,20 @@ test_empty_profile_does_not_write_dns_config() {
 	fi
 }
 
+test_run_loop_applies_down_profile_when_initial_health_fails() {
+	: >"$CURL_LOG"
+	: >"$SLEEP_LOG"
+	rm -f "$POSTED_JSON"
+	mkdir -p "$STATE_DIR"
+	printf 'up\n' >"$STATE_DIR/current_profile"
+
+	UCI_FAILURE_THRESHOLD=1 NSLOOKUP_HEALTH=fail UCI_CHECK_INTERVAL=1 run_script --run >/dev/null 2>&1 || true
+
+	posted="$(cat "$POSTED_JSON")"
+	assert_contains '"upstream_dns":["[/lan/]127.0.0.1:5353","223.5.5.5","119.29.29.29"]' "$posted" "run loop should apply down profile when health initially fails"
+	assert_contains "1" "$(cat "$SLEEP_LOG")" "run loop should continue after applying the down profile"
+}
+
 mkdir -p "$TMP_DIR"
 REAL_JQ="${REAL_JQ:-$(command -v jq)}"
 export REAL_JQ
@@ -292,5 +316,6 @@ test_preflight_reports_failures
 test_preflight_requires_api_post_test
 test_apply_profile_preserves_dns_info
 test_empty_profile_does_not_write_dns_config
+test_run_loop_applies_down_profile_when_initial_health_fails
 
 echo "tailscale_adguard_dns_switch tests passed"
