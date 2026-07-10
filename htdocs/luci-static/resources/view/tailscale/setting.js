@@ -415,7 +415,7 @@ return view.extend({
 				return E('div', {
 					id: this.cbid(section_id),
 					class: 'keepalive-peer-list',
-					style: 'display:grid;gap:4px;max-width:820px'
+					style: 'display:grid;gap:6px;max-width:680px;width:100%'
 				}, keepalivePeerChoices.map(function(choice, index) {
 					const peer = choice.peer;
 					const meta = [peer.ip, peer.onlineLabel].filter(Boolean).join(' / ');
@@ -425,7 +425,7 @@ return view.extend({
 					return E('label', {
 						'for': checkboxId,
 						class: 'keepalive-peer-row',
-						style: 'display:grid;grid-template-columns:24px minmax(160px,1fr) auto;gap:8px;align-items:center;padding:5px 8px;border:1px solid #d8dee5;border-radius:4px;cursor:pointer'
+						style: 'display:grid;grid-template-columns:24px minmax(180px,1fr) minmax(140px,260px);gap:10px;align-items:center;min-height:42px;padding:5px 10px;border:1px solid #d8dee5;border-radius:4px;box-sizing:border-box;cursor:pointer'
 					}, [
 						E('input', {
 							id: checkboxId,
@@ -433,13 +433,13 @@ return view.extend({
 							value: choice.value,
 							checked: selectedKeepalivePeers[choice.value] ? 'checked' : null,
 							disabled: disabled ? 'disabled' : null,
-							style: 'margin:0'
+							style: 'margin:0;justify-self:center;align-self:center'
 						}),
-						E('span', {}, [
+						E('span', { style: 'display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' }, [
 							E('strong', {}, peer.displayName || choice.value),
-							meta ? E('span', { style: 'color:#687586;font-size:12px;margin-left:8px' }, meta) : ''
+							meta ? E('span', { style: 'color:#687586;font-size:12px;overflow:hidden;text-overflow:ellipsis' }, meta) : ''
 						]),
-						E('span', { style: 'color:#687586;font-size:12px;text-align:right;white-space:normal' }, [
+						E('span', { style: 'color:#687586;font-size:12px;line-height:1.3;text-align:right;white-space:normal;overflow-wrap:anywhere;max-width:260px' }, [
 							routes,
 							choice.warning ? E('span', { style: routes ? 'color:#b7791f;margin-left:8px' : 'color:#b7791f' }, choice.warning) : ''
 						])
