@@ -425,17 +425,17 @@ return view.extend({
 					return E('label', {
 						'for': checkboxId,
 						class: 'keepalive-peer-row',
-						style: 'display:grid;grid-template-columns:24px minmax(180px,1fr) minmax(140px,260px);gap:10px;align-items:center;min-height:42px;padding:5px 10px;border:1px solid #d8dee5;border-radius:4px;box-sizing:border-box;cursor:pointer'
+						style: 'display:grid;grid-template-columns:minmax(320px,1fr) minmax(140px,260px);gap:10px;align-items:center;min-height:42px;padding:5px 10px;border:1px solid #d8dee5;border-radius:4px;box-sizing:border-box;cursor:pointer'
 					}, [
-						E('input', {
-							id: checkboxId,
-							type: 'checkbox',
-							value: choice.value,
-							checked: selectedKeepalivePeers[choice.value] ? 'checked' : null,
-							disabled: disabled ? 'disabled' : null,
-							style: 'margin:0;justify-self:center;align-self:center'
-						}),
-						E('span', { style: 'display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' }, [
+						E('span', { class: 'keepalive-peer-main', style: 'display:flex;align-items:center;gap:10px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' }, [
+							E('span', { class: 'keepalive-peer-check', style: 'display:flex;align-items:center;justify-content:center;line-height:0;flex:0 0 24px' }, E('input', {
+								id: checkboxId,
+								type: 'checkbox',
+								value: choice.value,
+								checked: selectedKeepalivePeers[choice.value] ? 'checked' : null,
+								disabled: disabled ? 'disabled' : null,
+								style: 'margin:0'
+							})),
 							E('strong', {}, peer.displayName || choice.value),
 							meta ? E('span', { style: 'color:#687586;font-size:12px;overflow:hidden;text-overflow:ellipsis' }, meta) : ''
 						]),

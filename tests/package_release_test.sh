@@ -84,12 +84,16 @@ assert_contains "keepalive-peer-list" htdocs/luci-static/resources/view/tailscal
 assert_contains "Only peers advertising subnet routes are shown" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "keepalive-peer-row" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "max-width:680px;width:100%" htdocs/luci-static/resources/view/tailscale/setting.js
-assert_contains "grid-template-columns:24px minmax(180px,1fr) minmax(140px,260px)" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "grid-template-columns:minmax(320px,1fr) minmax(140px,260px)" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "min-height:42px" htdocs/luci-static/resources/view/tailscale/setting.js
-assert_contains "justify-self:center;align-self:center" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "keepalive-peer-main" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "keepalive-peer-check" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "display:flex;align-items:center;gap:10px;min-width:0" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "display:flex;align-items:center;justify-content:center;line-height:0;flex:0 0 24px" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "max-width:260px" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "max-width:820px" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "grid-template-columns:24px minmax(160px,1fr) auto" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "grid-template-columns:24px minmax(180px,1fr) minmax(140px,260px)" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "padding:10px 12px" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "grid-template-columns:24px 1fr" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
