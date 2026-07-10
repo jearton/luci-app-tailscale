@@ -262,6 +262,14 @@ test_preflight_requires_api_post_test() {
 	assert_eq '{"upstream_dns":["223.5.5.5"]}' "$(cat "$TEST_UPSTREAM_JSON")" "preflight should use a fixed public upstream for non-persistent API POST validation"
 }
 
+test_preflight_does_not_require_accept_dns() {
+	out="$(UCI_ACCEPT_DNS=0 run_script --preflight)"
+	assert_contains "ready=pass" "$out" "preflight should pass when direct Tailscale DNS health checks work with accept_dns disabled"
+	if printf '%s' "$out" | grep -F 'accept_dns=' >/dev/null; then
+		fail "accept_dns should not be a blocking AdGuard DNS auto switch preflight check"
+	fi
+}
+
 test_apply_profile_preserves_dns_info() {
 	run_script --apply-profile up
 
@@ -314,6 +322,7 @@ test_profile_generation
 test_health_check
 test_preflight_reports_failures
 test_preflight_requires_api_post_test
+test_preflight_does_not_require_accept_dns
 test_apply_profile_preserves_dns_info
 test_empty_profile_does_not_write_dns_config
 test_run_loop_applies_down_profile_when_initial_health_fails

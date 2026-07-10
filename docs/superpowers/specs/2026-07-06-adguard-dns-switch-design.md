@@ -4,7 +4,7 @@
 
 Add an optional AdGuard DNS auto-switch feature to `luci-app-tailscale`.
 
-The feature lets OpenWrt LAN clients use Headscale DNS Records while Tailscale is healthy, and automatically fall back to public DNS behavior while Tailscale DNS is unhealthy. Tailscale itself keeps its official behavior, including `accept_dns=1` managing `/etc/resolv.conf`.
+The feature lets OpenWrt LAN clients use Headscale DNS Records while Tailscale is healthy, and automatically fall back to public DNS behavior while Tailscale DNS is unhealthy. Tailscale itself keeps its official behavior; OpenWrt may run with either `accept_dns=1` or `accept_dns=0` because the switch health check queries `100.100.100.100` directly.
 
 This is intended for setups where OpenWrt runs local AdGuard Home as the LAN DNS entry point.
 
@@ -99,7 +99,6 @@ The feature must not start unless all checks pass:
 - Port 53 is listened by AdGuardHome.
 - LAN DHCP explicitly advertises the OpenWrt LAN IP as DNS, for example `6,192.168.100.1`.
 - AdGuard API is reachable and writable.
-- Tailscale `accept_dns=1` is configured.
 - The Tailnet DNS health check can return the expected IP at least once.
 
 LuCI must show failing checks and block enabling the feature until they pass.
@@ -141,11 +140,7 @@ Responsibilities:
 - Clear AdGuard cache after profile changes.
 - Log state changes and rate-limit repeated failures.
 
-Add an independent procd service:
-
-```text
-/etc/init.d/tailscale-adguard-dns
-```
+Add a named procd instance under the existing `/etc/init.d/tailscale` service.
 
 Responsibilities:
 
@@ -153,8 +148,7 @@ Responsibilities:
 - Run the switch script in loop mode.
 - Restart on failure via procd respawn.
 - Reload when `tailscale` UCI changes.
-
-The existing `tailscale` init script should remain focused on `tailscaled`, `tailscale up`, firewall, routes, and keepalive.
+- Apply the down profile during Tailscale service stop/reload so persisted AdGuard upstreams do not keep pointing at Tailnet DNS after the watcher stops.
 
 ## LuCI Configuration
 
@@ -166,7 +160,6 @@ Fields:
 - Default upstream DNS list.
 - Tailnet conditional upstream DNS list.
 - Health check domain.
-- Health check DNS server.
 - Expected health check IP list.
 - Check interval.
 - Success threshold.

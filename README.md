@@ -52,8 +52,8 @@ Tailscale is a zero config VPN for building secure networks.
 - Disabled by default.
 - Intended for OpenWrt setups where local AdGuard Home owns LAN DNS port 53.
 - LAN DHCP should advertise the router LAN IP as DNS, for example `6,192.168.100.1`.
-- Tailscale should run with `accept_dns=1`.
 - DNS health is checked through Headscale/Tailscale DNS at `100.100.100.100`.
+- Tailscale `accept_dns` is not required; the health check queries `100.100.100.100` directly.
 - Healthy profile: default upstreams plus Tailnet conditional upstreams.
 - Unhealthy profile: default upstreams only.
 - Configuration is written through the AdGuard Home HTTP API, not by editing the YAML path.
@@ -62,10 +62,10 @@ Tailscale is a zero config VPN for building secure networks.
 Rollback:
 
 ```shell
-/etc/init.d/tailscale-adguard-dns stop
+/usr/sbin/tailscale_adguard_dns_switch --apply-profile down
 uci set tailscale.settings.adguard_dns_switch_enabled='0'
 uci commit tailscale
-/etc/init.d/tailscale-adguard-dns disable
+/etc/init.d/tailscale reload
 ```
 
 --------------

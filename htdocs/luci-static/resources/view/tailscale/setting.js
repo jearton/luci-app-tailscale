@@ -194,7 +194,6 @@ return view.extend({
 		];
 
 		m = new form.Map('tailscale', _('Tailscale'), _('Tailscale is a cross-platform and easy to use virtual LAN.'));
-		let acceptDnsOption;
 
 		s = m.section(form.TypedSection);
 		s.anonymous = true;
@@ -266,9 +265,9 @@ return view.extend({
 		o.default = '';
 		o.rmempty = true;
 
-		acceptDnsOption = s.taboption('advance', form.Flag, 'accept_dns', _('Accept DNS'), _('Accept DNS configuration from the Tailscale admin console.'));
-		acceptDnsOption.default = acceptDnsOption.enabled;
-		acceptDnsOption.rmempty = false;
+		o = s.taboption('advance', form.Flag, 'accept_dns', _('Accept DNS'), _('Accept DNS configuration from the Tailscale admin console.'));
+		o.default = o.enabled;
+		o.rmempty = false;
 
 		o = s.taboption('advance', form.Flag, 'advertise_exit_node', _('Exit Node'), _('Offer to be an exit node for outbound internet traffic from the Tailscale network.'));
 		o.default = o.disabled;
@@ -499,7 +498,6 @@ return view.extend({
 				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Port 53 is AdGuard')), E('div', { class: 'td' }, renderCheck(adguardPreflight.port_53_adguard))]),
 				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('LAN DHCP advertises this router as DNS')), E('div', { class: 'td' }, renderCheck(adguardPreflight.dhcp_advertises_lan_dns))]),
 				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('AdGuard API')), E('div', { class: 'td' }, renderCheck(adguardPreflight.adguard_api))]),
-				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Tailscale Accept DNS')), E('div', { class: 'td' }, renderCheck(adguardPreflight.accept_dns))]),
 				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Tailnet DNS health check')), E('div', { class: 'td' }, renderCheck(adguardPreflight.health_check))])
 			]);
 		};
@@ -522,9 +520,6 @@ return view.extend({
 
 			if (!hasFormListValue(adguardTailnetUpstreamsOption, section_id))
 				return _('At least one Tailnet Upstream is required before enabling AdGuard DNS auto switch.');
-
-			if (acceptDnsOption.formvalue(section_id) !== '1')
-				return _('Accept DNS must be enabled before enabling AdGuard DNS auto switch.');
 
 			return true;
 		};

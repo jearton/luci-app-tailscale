@@ -293,13 +293,12 @@ check_port_53_adguard() {
 preflight() {
 	ready=pass
 
-	for item in adguard_process port_53_adguard dhcp_advertises_lan_dns adguard_api accept_dns health_check; do
+	for item in adguard_process port_53_adguard dhcp_advertises_lan_dns adguard_api health_check; do
 		case "$item" in
 			adguard_process) "$PGREP_CMD" -f AdGuardHome >/dev/null 2>&1 ;;
 			port_53_adguard) check_port_53_adguard ;;
 			dhcp_advertises_lan_dns) check_dhcp_option ;;
 			adguard_api) check_adguard_api ;;
-			accept_dns) [ "$(uci_get accept_dns)" = "1" ] ;;
 			health_check) check_health ;;
 		esac
 
@@ -316,13 +315,12 @@ preflight() {
 }
 
 startup_preflight() {
-	for item in adguard_process port_53_adguard dhcp_advertises_lan_dns adguard_api accept_dns; do
+	for item in adguard_process port_53_adguard dhcp_advertises_lan_dns adguard_api; do
 		case "$item" in
 			adguard_process) "$PGREP_CMD" -f AdGuardHome >/dev/null 2>&1 ;;
 			port_53_adguard) check_port_53_adguard ;;
 			dhcp_advertises_lan_dns) check_dhcp_option ;;
 			adguard_api) check_adguard_api ;;
-			accept_dns) [ "$(uci_get accept_dns)" = "1" ] ;;
 		esac
 
 		[ "$?" -eq 0 ] || return 1
