@@ -321,7 +321,7 @@ msgid "Keepalive"
 msgstr "保活"
 
 msgid "Peer Keepalive"
-msgstr "對端保活"
+msgstr "啟用"
 
 msgid "Periodically send lightweight Tailscale pings to selected peers."
 msgstr "定時向選中的對端發送輕量 Tailscale ping。"

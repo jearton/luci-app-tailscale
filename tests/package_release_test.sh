@@ -100,6 +100,11 @@ assert_not_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/r
 assert_not_contains "form.MultiValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "Keepalive"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "保活"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Peer Keepalive"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "启用"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Peer Keepalive"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "啟用"' po/zh_Hant/tailscale.po
+assert_not_contains 'msgstr "对端保活"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Subnets"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "子网"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Only peers advertising subnet routes are shown. Selected peers are periodically pinged to keep cross-subnet paths active."' po/zh_Hans/tailscale.po
