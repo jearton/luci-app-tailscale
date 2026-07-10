@@ -34,7 +34,7 @@ body="$(cat "$SCRIPT")"
 
 assert_contains "uci -q delete network.tailscale" "$body" "helper should remove the legacy LuCI network interface wrapper"
 assert_contains "add_list firewall.tszone.device='tailscale0'" "$body" "firewall zone should bind directly to tailscale0"
-assert_contains "uci commit firewall && /etc/init.d/firewall reload" "$body" "helper should reload firewall after committing firewall changes"
+assert_contains "uci commit firewall && { /etc/init.d/firewall reload || /etc/init.d/firewall restart; }" "$body" "helper should restart firewall when reload cannot apply committed rules"
 
 assert_not_contains "set network.tailscale='interface'" "$body" "helper must not recreate a LuCI network interface for tailscale0"
 assert_not_contains "set network.tailscale.proto" "$body" "helper must not configure a netifd protocol for tailscale0"
