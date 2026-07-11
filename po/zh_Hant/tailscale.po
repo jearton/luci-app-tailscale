@@ -21,7 +21,7 @@ msgstr "啟用路由"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:178
 msgid "Accept subnet routes that other nodes advertise."
-msgstr "接受其他節點廣播的子網路由。"
+msgstr "接受其他節點廣播的網段。"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:235
 msgid "Access Control"
@@ -91,7 +91,7 @@ msgstr "公開網段"
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:208
 msgid ""
 "Expose physical network routes into Tailscale, e.g. <code>10.0.0.0/24</code>."
-msgstr "廣播子網路由至 Tailscale，例如：<code>10.0.0.0/24</code>。"
+msgstr "將本地物理網段發布到 Tailscale，例如：<code>10.0.0.0/24</code>。"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:243
 msgid "Extra Settings"
@@ -318,13 +318,13 @@ msgid "Keepalive Peers"
 msgstr "保活對端"
 
 msgid "Only peers advertising subnet routes are shown. Selected peers are periodically pinged to keep cross-subnet paths active."
-msgstr "僅顯示對端也發布了子網路由的裝置；選中的裝置會被定時 Tailscale ping，用於保持跨子網路由路徑活躍。"
+msgstr "僅顯示對端也發布了網段的裝置；選中的裝置會被定時 Tailscale ping，用於保持跨網段路徑活躍。"
 
 msgid "No Available Peers"
 msgstr "沒有可用對端"
 
 msgid "No subnet routes"
-msgstr "未發布子網路由"
+msgstr "未發布網段"
 
 msgid "Subnets"
 msgstr "子網"

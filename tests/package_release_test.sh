@@ -107,7 +107,9 @@ assert_not_contains 'msgstr "对端保活"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Subnets"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "子网"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Only peers advertising subnet routes are shown. Selected peers are periodically pinged to keep cross-subnet paths active."' po/zh_Hans/tailscale.po
-assert_contains 'msgstr "仅显示对端也发布了子网路由的设备；选中的设备会被定时 Tailscale ping，用于保持跨子网路由路径活跃。"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "仅显示对端也发布了网段的设备；选中的设备会被定时 Tailscale ping，用于保持跨网段路径活跃。"' po/zh_Hans/tailscale.po
+assert_not_contains "子网路由" po/zh_Hans/tailscale.po
+assert_not_contains "子網路由" po/zh_Hant/tailscale.po
 assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po
