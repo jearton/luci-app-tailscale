@@ -43,8 +43,7 @@ async function getStatus() {
 		authURL: undefined,
 		displayName: undefined,
 		onlineExitNodes: [],
-		peers: [],
-		subnetRoutes: []
+		peers: []
 	};
 	const res = await callServiceList('tailscale');
 	try {
@@ -95,8 +94,6 @@ async function getStatus() {
 			.filter(peer => peer.name);
 		status.onlineExitNodes = Object.values(tailscaleStatus.Peer)
 			.flatMap(peer => (peer.ExitNodeOption && peer.Online) ? [peer.HostName] : []);
-		status.subnetRoutes = Object.values(tailscaleStatus.Peer)
-			.flatMap(peer => peer.PrimaryRoutes || []);
 	}
 	return status;
 }
@@ -181,7 +178,6 @@ return view.extend({
 		const interfaceSubnets = data[2];
 		const onlineExitNodes = statusData.onlineExitNodes;
 		const peers = statusData.peers;
-		const subnetRoutes = statusData.subnetRoutes;
 		const hasAuthKey = !!uci.get('tailscale', 'settings', 'authkey');
 		const savedKeepalivePeers = toList(uci.get('tailscale', 'settings', 'keepalive_peers'));
 		const adguardPreflight = parseKeyValues((data[3] || {}).stdout);
@@ -300,19 +296,6 @@ return view.extend({
 		o.default = o.disabled;
 		o.depends('accept_routes', '1');
 		o.rmempty = false;
-
-		o = s.taboption('advance', form.DynamicList, 'subnet_routes', _('Subnet Routes'), _('Select subnet routes advertised by other nodes in Tailscale network.'));
-		if (subnetRoutes.length > 0) {
-			subnetRoutes.forEach(function(route) {
-				o.value(route, route);
-			});
-		} else {
-			o.value('', _('No Available Subnet Routes'));
-			o.readonly = true;
-		}
-		o.default = '';
-		o.depends('disable_snat_subnet_routes', '1');
-		o.rmempty = true;
 
 		o = s.taboption('advance', form.MultiValue, 'access', _('Access Control'));
 		o.value('ts_ac_lan', _('Tailscale access LAN'));

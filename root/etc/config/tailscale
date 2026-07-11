@@ -25,9 +25,6 @@ config tailscale 'settings'
 	#list advertise_routes ''
 	# Set to '1' to disable subnet route masquerading
 	#option disable_snat_subnet_routes '1'
-	# To connect subnets within your tailnet (e.g. 192.168.1.0/24)
-	# Documentation https://tailscale.com/kb/1214/site-to-site
-	#list subnet_routes ''
 	# Set firewall zone (ts_ac_lan: Tailscale access LAN, ts_ac_wan: Tailscale access WAN:, lan_ac_ts: LAN access Tailscale, wan_ac_ts: WAN access Tailscale)
 	# Documentation https://openwrt.org/docs/guide-user/services/vpn/tailscale/start
 	#list access 'ts_ac_lan'

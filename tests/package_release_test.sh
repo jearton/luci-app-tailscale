@@ -114,6 +114,18 @@ assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard 用户名"' po/zh_Hans/tailscale.po
 assert_contains "100.100.100.100" root/usr/sbin/tailscale_adguard_dns_switch
 assert_contains "100.100.100.100" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "'subnet_routes'" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "Subnet Routes" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "No Available Subnet Routes" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "config_get subnet_routes" root/etc/init.d/tailscale
+assert_not_contains 'SUBNET_ROUTES="$subnet_routes"' root/etc/init.d/tailscale
+assert_not_contains "list subnet_routes" root/etc/config/tailscale
+assert_not_contains 'msgid "Subnet Routes"' po/templates/tailscale.pot
+assert_not_contains 'msgid "No Available Subnet Routes"' po/templates/tailscale.pot
+assert_not_contains 'msgid "Subnet Routes"' po/zh_Hans/tailscale.po
+assert_not_contains 'msgid "No Available Subnet Routes"' po/zh_Hans/tailscale.po
+assert_not_contains 'msgid "Subnet Routes"' po/zh_Hant/tailscale.po
+assert_not_contains 'msgid "No Available Subnet Routes"' po/zh_Hant/tailscale.po
 assert_not_contains "Tailscale Accept DNS" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "Accept DNS must be enabled before enabling AdGuard DNS auto switch." htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains 'msgid "Tailscale Accept DNS"' po/zh_Hans/tailscale.po

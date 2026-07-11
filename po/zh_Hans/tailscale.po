@@ -180,10 +180,6 @@ msgstr "网络接口信息"
 msgid "No Available Exit Nodes"
 msgstr "没有可用的出口节点"
 
-#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:228
-msgid "No Available Subnet Routes"
-msgstr "没有可用的子网路由"
-
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:61
 msgid "No interface online."
 msgstr "无在线接口。"
@@ -220,10 +216,6 @@ msgstr "滚动到底部"
 msgid "Select an online machine name to use as an exit node."
 msgstr "选择一个可用的节点名称作为出口节点使用。"
 
-#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:222
-msgid "Select subnet routes advertised by other nodes in Tailscale network."
-msgstr "选择非本设备广播的子网路由。"
-
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:258
 msgid "Server Address"
 msgstr "服务器地址"
@@ -243,10 +235,6 @@ msgstr "错误日志"
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:168
 msgid "StdOut Log"
 msgstr "运行日志"
-
-#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:222
-msgid "Subnet Routes"
-msgstr "子网路由"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:100
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:75

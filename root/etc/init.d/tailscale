@@ -21,7 +21,7 @@ section_enabled() {
 
 tailscale_helper() {
 	local cfg="$1"
-	local accept_routes hostname accept_dns advertise_exit_node exit_node advertise_routes disable_snat_subnet_routes subnet_routes access flags login_server authkey std_out std_err
+	local accept_routes hostname accept_dns advertise_exit_node exit_node advertise_routes disable_snat_subnet_routes access flags login_server authkey std_out std_err
 
 	config_get_bool accept_routes $cfg 'accept_routes' 0
 	config_get hostname $cfg 'hostname'
@@ -30,7 +30,6 @@ tailscale_helper() {
 	config_get exit_node $cfg 'exit_node'
 	config_get advertise_routes $cfg 'advertise_routes'
 	config_get_bool disable_snat_subnet_routes $cfg 'disable_snat_subnet_routes' 0
-	config_get subnet_routes $cfg 'subnet_routes'
 	config_get access $cfg 'access'
 	config_get flags $cfg 'flags'
 	config_get login_server $cfg 'login_server'
@@ -62,7 +61,6 @@ tailscale_helper() {
 	procd_set_param env \
 		ACCEPT_DNS="$accept_dns" \
 		EXIT_NODE="$exit_node" \
-		SUBNET_ROUTES="$subnet_routes" \
 		ACCESS="$access" \
 		DISABLE_SNAT_SUBNET_ROUTES="$disable_snat_subnet_routes"
 

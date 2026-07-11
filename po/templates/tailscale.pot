@@ -174,10 +174,6 @@ msgstr ""
 msgid "No Available Exit Nodes"
 msgstr ""
 
-#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:228
-msgid "No Available Subnet Routes"
-msgstr ""
-
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:61
 msgid "No interface online."
 msgstr ""
@@ -214,10 +210,6 @@ msgstr ""
 msgid "Select an online machine name to use as an exit node."
 msgstr ""
 
-#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:222
-msgid "Select subnet routes advertised by other nodes in Tailscale network."
-msgstr ""
-
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:258
 msgid "Server Address"
 msgstr ""
@@ -236,10 +228,6 @@ msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:168
 msgid "StdOut Log"
-msgstr ""
-
-#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:222
-msgid "Subnet Routes"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:100
