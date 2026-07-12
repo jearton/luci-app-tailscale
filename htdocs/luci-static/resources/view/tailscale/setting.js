@@ -496,7 +496,7 @@ return view.extend({
 				return _('Health Check Domain is required before enabling AdGuard DNS auto switch.');
 
 			if (!hasFormListValue(adguardHealthExpectedIpsOption, section_id))
-				return _('At least one Expected Health IP is required before enabling AdGuard DNS auto switch.');
+				return _('At least one Expected Internal IP is required before enabling AdGuard DNS auto switch.');
 
 			if (!hasFormListValue(adguardDefaultUpstreamsOption, section_id))
 				return _('At least one Default Upstream is required before enabling AdGuard DNS auto switch.');
@@ -515,10 +515,10 @@ return view.extend({
 		adguardTailnetUpstreamsOption.default = '';
 		adguardTailnetUpstreamsOption.rmempty = true;
 
-		adguardHealthDomainOption = s.taboption('adguard_dns', form.Value, 'adguard_health_domain', _('Health Check Domain'), _('Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected health IPs.'));
+		adguardHealthDomainOption = s.taboption('adguard_dns', form.Value, 'adguard_health_domain', _('Health Check Domain'), _('Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected internal IPs.'));
 		adguardHealthDomainOption.rmempty = true;
 
-		adguardHealthExpectedIpsOption = s.taboption('adguard_dns', form.DynamicList, 'adguard_health_expected_ips', _('Expected Health IPs'));
+		adguardHealthExpectedIpsOption = s.taboption('adguard_dns', form.DynamicList, 'adguard_health_expected_ips', _('Expected Internal IPs'));
 		adguardHealthExpectedIpsOption.default = '';
 		adguardHealthExpectedIpsOption.rmempty = true;
 

@@ -383,7 +383,7 @@ msgstr ""
 msgid "Health Check Domain is required before enabling AdGuard DNS auto switch."
 msgstr ""
 
-msgid "At least one Expected Health IP is required before enabling AdGuard DNS auto switch."
+msgid "At least one Expected Internal IP is required before enabling AdGuard DNS auto switch."
 msgstr ""
 
 msgid "At least one Default Upstream is required before enabling AdGuard DNS auto switch."
@@ -410,10 +410,10 @@ msgstr ""
 msgid "Health Check Domain"
 msgstr ""
 
-msgid "Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected health IPs."
+msgid "Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected internal IPs."
 msgstr ""
 
-msgid "Expected Health IPs"
+msgid "Expected Internal IPs"
 msgstr ""
 
 msgid "Check Interval"

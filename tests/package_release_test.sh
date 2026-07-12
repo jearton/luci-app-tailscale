@@ -114,6 +114,13 @@ assert_contains 'msgid "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard DNS"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "AdGuard Username"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "AdGuard 用户名"' po/zh_Hans/tailscale.po
+assert_contains "Expected Internal IPs" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains 'msgid "Expected Internal IPs"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "预期内网 IP"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "啟用 AdGuard DNS 自動切換前至少需要填寫一個預期內網 IP。"' po/zh_Hant/tailscale.po
+assert_not_contains "Expected Health IPs" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_not_contains "预期健康 IP" po/zh_Hans/tailscale.po
+assert_not_contains "預期健康 IP" po/zh_Hant/tailscale.po
 assert_contains "100.100.100.100" root/usr/sbin/tailscale_adguard_dns_switch
 assert_contains "100.100.100.100" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "'subnet_routes'" htdocs/luci-static/resources/view/tailscale/setting.js

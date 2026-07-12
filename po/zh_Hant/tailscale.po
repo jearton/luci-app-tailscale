@@ -389,8 +389,8 @@ msgstr "僅在所有狀態檢查通過後啟用。"
 msgid "Health Check Domain is required before enabling AdGuard DNS auto switch."
 msgstr "啟用 AdGuard DNS 自動切換前必須填寫健康檢查網域。"
 
-msgid "At least one Expected Health IP is required before enabling AdGuard DNS auto switch."
-msgstr "啟用 AdGuard DNS 自動切換前至少需要填寫一個預期健康 IP。"
+msgid "At least one Expected Internal IP is required before enabling AdGuard DNS auto switch."
+msgstr "啟用 AdGuard DNS 自動切換前至少需要填寫一個預期內網 IP。"
 
 msgid "At least one Default Upstream is required before enabling AdGuard DNS auto switch."
 msgstr "啟用 AdGuard DNS 自動切換前至少需要填寫一個預設上游。"
@@ -416,11 +416,11 @@ msgstr "Tailnet DNS 健康時追加使用。"
 msgid "Health Check Domain"
 msgstr "健康檢查網域"
 
-msgid "Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected health IPs."
-msgstr "透過 Tailscale DNS 100.100.100.100 解析，結果必須匹配任一預期健康 IP。"
+msgid "Resolved through Tailscale DNS 100.100.100.100. The result must match one of the expected internal IPs."
+msgstr "透過 Tailscale DNS 100.100.100.100 解析，結果必須匹配任一預期內網 IP。"
 
-msgid "Expected Health IPs"
-msgstr "預期健康 IP"
+msgid "Expected Internal IPs"
+msgstr "預期內網 IP"
 
 msgid "Check Interval"
 msgstr "檢查間隔"
