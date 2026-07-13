@@ -53,6 +53,7 @@ peer_matches() {
 	local peer="$1"
 	local host="$2"
 	local dns="$3"
+	local matched_ip="$4"
 	local normalized_dns short_dns
 
 	normalized_dns="$(normalize_dns "$dns")"
@@ -61,7 +62,8 @@ peer_matches() {
 	[ "$host" = "$peer" ] || \
 		[ "$dns" = "$peer" ] || \
 		[ "$normalized_dns" = "$peer" ] || \
-		[ "$short_dns" = "$peer" ]
+		[ "$short_dns" = "$peer" ] || \
+		[ "$matched_ip" = "$peer" ]
 }
 
 emit_resolved_peer() {
@@ -69,11 +71,14 @@ emit_resolved_peer() {
 	local host="$2"
 	local dns="$3"
 	local ip="$4"
+	local matched_ip="$5"
 
-	[ -n "$host" ] || [ -n "$dns" ] || return 1
-	peer_matches "$peer" "$host" "$dns" || return 1
+	[ -n "$host" ] || [ -n "$dns" ] || [ -n "$matched_ip" ] || return 1
+	peer_matches "$peer" "$host" "$dns" "$matched_ip" || return 1
 
-	if [ -n "$ip" ]; then
+	if [ -n "$matched_ip" ]; then
+		printf 'OK\t%s\n' "$matched_ip"
+	elif [ -n "$ip" ]; then
 		printf 'OK\t%s\n' "$ip"
 	else
 		printf 'NO_IP\t\n'
@@ -83,7 +88,7 @@ emit_resolved_peer() {
 
 resolve_peer_with_jshn() {
 	local peer="$1"
-	local status keys key host dns ips ip value
+	local status keys key host dns ips ip matched_ip value
 
 	[ -r "$JSHN_LIB" ] || return 1
 	status="$(read_status)" || return 1
@@ -111,19 +116,20 @@ resolve_peer_with_jshn() {
 		dns=
 		ips=
 		ip=
+		matched_ip=
 		json_get_var host HostName
 		json_get_var dns DNSName
 
 		if json_select TailscaleIPs; then
 			json_get_values ips
 			for value in $ips; do
-				ip="$value"
-				break
+				[ -n "$ip" ] || ip="$value"
+				[ "$value" = "$peer" ] && matched_ip="$value"
 			done
 			json_select ..
 		fi
 
-		if emit_resolved_peer "$peer" "$host" "$dns" "$ip"; then
+		if emit_resolved_peer "$peer" "$host" "$dns" "$ip" "$matched_ip"; then
 			json_cleanup
 			return 0
 		fi
@@ -167,12 +173,13 @@ def short_dns(value):
 for item in status.get("Peer", {}).values():
     host = item.get("HostName", "")
     dns = item.get("DNSName", "")
-    if not host and not dns:
-        continue
+    ips = item.get("TailscaleIPs") or []
+    matched_ip = next((value for value in ips if value == peer), "")
 
-    if peer in (host, dns, norm_dns(dns), short_dns(dns)):
-        ips = item.get("TailscaleIPs") or []
-        if ips:
+    if peer in (host, dns, norm_dns(dns), short_dns(dns)) or matched_ip:
+        if matched_ip:
+            print("OK\t%s" % matched_ip)
+        elif ips:
             print("OK\t%s" % ips[0])
         else:
             print("NO_IP\t")

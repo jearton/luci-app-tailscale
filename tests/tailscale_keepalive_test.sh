@@ -37,6 +37,13 @@ cat >"$STATUS_FILE" <<'JSON'
       "HostName": "no-ip-peer",
       "DNSName": "no-ip-peer.litata.tailnet.",
       "TailscaleIPs": []
+    },
+    "nodekey:four": {
+      "HostName": "",
+      "DNSName": "",
+      "TailscaleIPs": [
+        "100.64.100.44"
+      ]
     }
   }
 }
@@ -45,12 +52,16 @@ JSON
 output="$(TAILSCALE_STATUS_FILE="$STATUS_FILE" "$SCRIPT" --resolve-peers \
 		site-a-openwrt \
 		site-b-gateway.example.tailnet \
+		100.64.100.2 \
+		100.64.100.44 \
 		missing-peer \
 		no-ip-peer)"
 
-expected="$(printf '%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s' \
+expected="$(printf '%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s' \
 	site-a-openwrt OK 100.64.100.2 \
 	site-b-gateway.example.tailnet OK 100.64.100.1 \
+	100.64.100.2 OK 100.64.100.2 \
+	100.64.100.44 OK 100.64.100.44 \
 	missing-peer NOT_FOUND '' \
 	no-ip-peer NO_IP '')"
 

@@ -3,26 +3,156 @@
 # Copyright (C) 2025 asvow
 # SPDX-License-Identifier: GPL-3.0-only
 
+TAILSCALE_BIN="${TAILSCALE_BIN:-/usr/sbin/tailscale}"
+LOGGER_CMD="${LOGGER_CMD:-logger}"
+FLOCK_BIN="${FLOCK_BIN:-flock}"
+IFCONFIG_BIN="${IFCONFIG_BIN:-ifconfig}"
+FIREWALL_INIT="${FIREWALL_INIT:-/etc/init.d/firewall}"
+DNSMASQ_INIT="${DNSMASQ_INIT:-/etc/init.d/dnsmasq}"
+TAILSCALE_INIT="${TAILSCALE_INIT:-/etc/init.d/tailscale}"
+TAILSCALE_HELPER_STATE_DIR="${TAILSCALE_HELPER_STATE_DIR:-/var/lib/tailscale}"
+EXIT_NODE_FIREWALL_STATE_FILE="$TAILSCALE_HELPER_STATE_DIR/exit_node_firewall_state"
+LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale.lock}"
+
+log_error() {
+	"$LOGGER_CMD" -p daemon.err -t tailscale_helper "$(date '+%Y/%m/%d %H:%M:%S') $1"
+}
+
 # Error handling function
 revert_exit() {
-	logger -p daemon.err -t tailscale_helper "$(date '+%Y/%m/%d %H:%M:%S') $1"
+	log_error "$1"
 	uci revert dhcp && uci revert network && uci revert firewall
-	/etc/init.d/tailscale stop
+	"$TAILSCALE_INIT" stop
 	exit 1
 }
 
+find_lan_wan_forwarding() {
+	uci show firewall | awk -F= '
+		$1 ~ /^firewall\.@forwarding\[[0-9]+\]$/ && $2 == "forwarding" {
+			section=$1
+			next
+		}
+		$1 ~ /^firewall\.@forwarding\[[0-9]+\]\.src$/ {
+			value=$2
+			gsub(/\047/, "", value)
+			if (section != "" && value == "lan") {
+				src[section]=1
+			}
+			next
+		}
+		$1 ~ /^firewall\.@forwarding\[[0-9]+\]\.dest$/ {
+			value=$2
+			gsub(/\047/, "", value)
+			if (section != "" && value == "wan") {
+				dest[section]=1
+			}
+		}
+		END {
+			for (section in src) {
+				if (dest[section]) {
+					print section
+					exit
+				}
+			}
+		}
+	'
+}
+
+save_exit_node_firewall_state() {
+	local default_forward lan_wan_section lan_wan_enabled state_tmp
+
+	[ -f "$EXIT_NODE_FIREWALL_STATE_FILE" ] && return 0
+	mkdir -p "$TAILSCALE_HELPER_STATE_DIR" || return 1
+	state_tmp="${EXIT_NODE_FIREWALL_STATE_FILE}.tmp"
+	: >"$state_tmp" || return 1
+
+	if default_forward="$(uci get firewall.@defaults[0].forward 2>/dev/null)"; then
+		printf 'default_forward_present=1\n' >>"$state_tmp"
+		printf 'default_forward_value=%s\n' "$default_forward" >>"$state_tmp"
+	else
+		printf 'default_forward_present=0\n' >>"$state_tmp"
+	fi
+
+	lan_wan_section="$(find_lan_wan_forwarding)"
+	if [ -n "$lan_wan_section" ]; then
+		printf 'lan_wan_forwarding_present=1\n' >>"$state_tmp"
+		if lan_wan_enabled="$(uci get "$lan_wan_section.enabled" 2>/dev/null)"; then
+			printf 'lan_wan_enabled_present=1\n' >>"$state_tmp"
+			printf 'lan_wan_enabled_value=%s\n' "$lan_wan_enabled" >>"$state_tmp"
+		else
+			printf 'lan_wan_enabled_present=0\n' >>"$state_tmp"
+		fi
+	else
+		printf 'lan_wan_forwarding_present=0\n' >>"$state_tmp"
+	fi
+
+	mv "$state_tmp" "$EXIT_NODE_FIREWALL_STATE_FILE"
+}
+
+restore_exit_node_firewall_state() {
+	local default_forward_value default_forward_present lan_wan_enabled_present lan_wan_enabled_value
+	local changed lan_wan_section current_value
+
+	[ -r "$EXIT_NODE_FIREWALL_STATE_FILE" ] || return 0
+
+	default_forward_value=
+	default_forward_present=0
+	lan_wan_enabled_present=0
+	lan_wan_enabled_value=
+	lan_wan_forwarding_present=0
+	. "$EXIT_NODE_FIREWALL_STATE_FILE"
+
+	changed=0
+	if [ "${default_forward_present:-0}" = "1" ]; then
+		current_value="$(uci get firewall.@defaults[0].forward 2>/dev/null || true)"
+		if [ "$current_value" != "${default_forward_value:-}" ]; then
+			uci set "firewall.@defaults[0].forward=${default_forward_value}" || return 1
+			changed=1
+		fi
+	elif uci get firewall.@defaults[0].forward >/dev/null 2>&1; then
+		uci -q delete firewall.@defaults[0].forward || return 1
+		changed=1
+	fi
+
+	lan_wan_section="$(find_lan_wan_forwarding)"
+	if [ -n "$lan_wan_section" ] && [ "${lan_wan_forwarding_present:-0}" = "1" ]; then
+		if [ "${lan_wan_enabled_present:-0}" = "1" ]; then
+			current_value="$(uci get "$lan_wan_section.enabled" 2>/dev/null || true)"
+			if [ "$current_value" != "${lan_wan_enabled_value:-}" ]; then
+				uci set "$lan_wan_section.enabled=${lan_wan_enabled_value}" || return 1
+				changed=1
+			fi
+		elif uci get "$lan_wan_section.enabled" >/dev/null 2>&1; then
+			uci -q delete "$lan_wan_section.enabled" || return 1
+			changed=1
+		fi
+	fi
+
+	rm -f "$EXIT_NODE_FIREWALL_STATE_FILE"
+	if [ "$changed" -eq 1 ] && [ -n "$(uci changes firewall)" ]; then
+		uci commit firewall && { "$FIREWALL_INIT" reload || "$FIREWALL_INIT" restart; }
+	fi
+}
+
+if [ "${1:-}" = "--cleanup-exit-node-firewall" ]; then
+	restore_exit_node_firewall_state || {
+		log_error "Failed to restore exit-node firewall state."
+		exit 1
+	}
+	exit 0
+fi
+
 # Execute tailscale up command
-/usr/sbin/tailscale up --reset "$@" || revert_exit "tailscale up failed."
+"$TAILSCALE_BIN" up --reset "$@" || revert_exit "tailscale up failed."
 
 # Use flock to acquire an exclusive lock
-LOCK_FILE="/var/lock/tailscale.lock"
 exec 9> "$LOCK_FILE"
-flock -xn 9 || { revert_exit "Failed to acquire lock on $LOCK_FILE"; }
+"$FLOCK_BIN" -xn 9 || { revert_exit "Failed to acquire lock on $LOCK_FILE"; }
 trap 'rm -f "$LOCK_FILE"; exit' INT TERM EXIT
 
 # Wait for Tailscale IPv4 address
 count=0
-while [ -z "$(ifconfig | grep 'tailscale' | awk '{print $1}')" ] || [ -z "$(tailscale ip -4)" ]; do
+while [ -z "$("$IFCONFIG_BIN" | grep 'tailscale' | awk '{print $1}')" ] || [ -z "$("$TAILSCALE_BIN" ip -4)" ]; do
 	sleep 2
 	count=$((count + 1))
 	[ "${count}" -ge 5 ] && revert_exit "Failed to get Tailscale IPv4 address after 5 attempts."
@@ -30,7 +160,7 @@ done
 
 # Configure Tailscale MagicDNS
 if [ "$ACCEPT_DNS" = "1" ]; then
-	MagicDNSSuffix=$(tailscale status --json | awk -F'"' '/"MagicDNSSuffix"/ {last=$(NF-1)} END {print last}')
+	MagicDNSSuffix=$("$TAILSCALE_BIN" status --json | awk -F'"' '/"MagicDNSSuffix"/ {last=$(NF-1)} END {print last}')
 	target_address="/$MagicDNSSuffix/100.100.100.100"
 	index=$(uci show dhcp | grep 'dhcp.@dnsmasq\[[0-9]\+\]=dnsmasq' | grep -o '[0-9]\+')
 	for i in $index; do
@@ -50,10 +180,12 @@ done
 
 # Configure exit node firewall rules
 if [ -n "$EXIT_NODE" ]; then
+	save_exit_node_firewall_state || revert_exit "Failed to save exit-node firewall state."
 	uci set firewall.@defaults[0].forward='REJECT' || revert_exit "Failed to set default forward policy to REJECT."
-	# Find the LAN to WAN forwarding rule index
-	index=$(uci show firewall | grep "firewall.@forwarding\[[0-9]\+\]\.src='lan'" -B 1 -A 1 | grep "firewall.@forwarding\[[0-9]\+\]\.dest='wan'" | grep -o '[0-9]\+')
-	[ -n "$index" ] && uci set firewall.@forwarding[$index].enabled='0' || revert_exit "Failed to disable forwarding rule."
+	lan_wan_section="$(find_lan_wan_forwarding)"
+	[ -n "$lan_wan_section" ] && uci set "$lan_wan_section.enabled=0" || true
+else
+	restore_exit_node_firewall_state || revert_exit "Failed to restore exit-node firewall state."
 fi
 
 # Configure firewall zone and rules
@@ -113,6 +245,7 @@ if [ "${ACCESS//wan_ac_ts/}" != "$ACCESS" ]; then
 fi
 
 # Commit configuration changes and reload service
-[ -n "$(uci changes dhcp)" ] && uci commit dhcp && /etc/init.d/dnsmasq reload
+[ -n "$(uci changes dhcp)" ] && uci commit dhcp && "$DNSMASQ_INIT" reload
 [ -n "$(uci changes network)" ] && uci commit network
-[ -n "$(uci changes firewall)" ] && uci commit firewall && { /etc/init.d/firewall reload || /etc/init.d/firewall restart; }
+[ -n "$(uci changes firewall)" ] && uci commit firewall && { "$FIREWALL_INIT" reload || "$FIREWALL_INIT" restart; }
+exit 0
