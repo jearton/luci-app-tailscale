@@ -141,6 +141,18 @@ function renderRoleBadges(peer) {
 async function loadPeerState() {
 	try {
 		var res = await fs.exec('/usr/sbin/tailscale', ['status', '--json']);
+		var code = Number(res && res.code);
+
+		if (Number.isFinite(code) && code !== 0) {
+			var statusError = String((res && (res.stderr || res.stdout || res.message)) || _('Unable to load Tailscale peer status')).trim();
+
+			return {
+				ok: false,
+				peers: [],
+				error: statusError || _('Unable to load Tailscale peer status')
+			};
+		}
+
 		return {
 			ok: true,
 			peers: parseStatus(res.stdout),
@@ -250,6 +262,7 @@ return view.extend({
 				state.peers = next.peers;
 				state.error = '';
 			} else {
+				state.peers = [];
 				state.error = next.error;
 			}
 			renderRows();

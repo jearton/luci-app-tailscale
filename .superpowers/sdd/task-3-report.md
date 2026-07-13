@@ -25,3 +25,14 @@
 
 ## Concerns
 - None.
+
+## Task 3 Fix (2026-07-14)
+- `loadPeerState()` now checks `res.code` after `tailscale status --json` execution; when `res.code !== 0`, it returns `{ ok: false, peers: [], error: <message> }` without parsing status.
+- `refreshPeers()` now clears stale rows on failed refresh by setting `state.peers = []` and `state.error = next.error` when `next.ok === false`.
+- Behavior remains read-only (no reload/restart/network side effects introduced).
+
+### Verification
+- Command: `node --check htdocs/luci-static/resources/view/tailscale/peers.js`
+  - Result: syntax check passed (exit 0).
+- Command: `sh tests/package_release_test.sh`
+  - Result: `package release tests passed`.
