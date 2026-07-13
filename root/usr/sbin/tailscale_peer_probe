@@ -5,7 +5,18 @@
 TAILSCALE_BIN="${TAILSCALE_BIN:-/usr/sbin/tailscale}"
 
 json_escape() {
-	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g'
+	printf '%s' "$1" | awk '
+	{
+		gsub(/\\/,"\\\\")
+		gsub(/"/, "\\\\\"")
+		gsub(/\t/, "\\\\t")
+		gsub(/\r/, "\\\\r")
+		if (NR > 1) {
+			printf "\\\\n"
+		}
+		printf "%s", $0
+	}
+	'
 }
 
 json_string() {

@@ -39,15 +39,19 @@ mkdir -p "$TMP_DIR"
 
 cat >"$TMP_DIR/fake-tailscale" <<'SH'
 #!/bin/sh
-case "$*" in
-	"ping --c=1 --timeout=5s direct-peer")
-		echo "pong from direct-peer (100.64.2.2) via 192.168.188.1:41641 in 12.4ms"
-		exit 0
-		;;
-	"ping --c=1 --timeout=5s derp-peer")
-		echo "pong from derp-peer (100.64.2.1) via DERP(litata) in 41.8ms"
-		exit 0
-		;;
+	case "$*" in
+		"ping --c=1 --timeout=5s direct-peer")
+			echo "pong from direct-peer (100.64.2.2) via 192.168.188.1:41641 in 12.4ms"
+			exit 0
+			;;
+		"ping --c=1 --timeout=5s control-peer")
+			printf 'pong from control-peer (100.64.2.3) via 192.168.188.1:41641 in 15.0ms\n"quoted" line has \\backslash\\ and tab:\t with carriage:\rreturn'
+			exit 0
+			;;
+		"ping --c=1 --timeout=5s derp-peer")
+			echo "pong from derp-peer (100.64.2.1) via DERP(litata) in 41.8ms"
+			exit 0
+			;;
 	"ping --c=1 --timeout=5s weird-peer")
 		echo "pong from weird-peer using new format"
 		exit 0
@@ -88,6 +92,21 @@ assert_contains '"peer":"weird-peer"' "$unknown_output"
 assert_contains '"ok":true' "$unknown_output"
 assert_contains '"path":"unknown"' "$unknown_output"
 assert_contains '"summary":"unknown path"' "$unknown_output"
+
+control_output="$(run_probe control-peer)"
+assert_contains '"peer":"control-peer"' "$control_output"
+assert_contains '"ok":true' "$control_output"
+assert_contains '"path":"direct"' "$control_output"
+assert_contains '"latency_ms":15.0' "$control_output"
+assert_contains '"summary":"direct 15.0 ms"' "$control_output"
+assert_contains '\\"' "$control_output"
+assert_contains '\\' "$control_output"
+assert_contains '\\t' "$control_output"
+assert_contains '\\r' "$control_output"
+assert_contains '\\n' "$control_output"
+
+control_output_lines="$(printf '%s\n' "$control_output" | wc -l | tr -d ' ')"
+[ "$control_output_lines" -eq 1 ] || fail "expected control peer output to be single-line JSON: $control_output"
 
 failed_output="$(run_probe failed-peer || true)"
 assert_contains '"peer":"failed-peer"' "$failed_output"
