@@ -6,6 +6,7 @@
 				"/sbin/ip -s -j ad": [ "exec" ],
 				"/sbin/logread -e tailscale": [ "exec" ],
 				"/usr/sbin/tailscale status --json": [ "exec" ],
+				"/usr/sbin/tailscale_peer_probe": [ "exec" ],
 				"/usr/sbin/tailscale_adguard_dns_switch --preflight": [ "exec" ],
 				"/usr/sbin/tailscale login": [ "exec" ],
 				"/usr/sbin/tailscale logout": [ "exec" ]
