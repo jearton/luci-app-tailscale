@@ -119,6 +119,94 @@ msgstr ""
 msgid "Peers"
 msgstr ""
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:216
+msgid "Tailscale Peers"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:217
+msgid "View all peers and manually probe whether traffic is direct or relayed through DERP."
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:170
+msgid "Unable to load Tailscale peer status"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:151
+msgid "No peers match the selected filter."
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:191
+msgid "No probe target available"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:55
+msgid "Probe failed"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:74
+msgid "Not probed"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:84
+msgid "Probing..."
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:85
+msgid "Probe"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:62
+msgid "Direct"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:63
+msgid "DERP"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:64
+msgid "Failed"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:64
+msgid "Unknown"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:133
+msgid "Filter"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:142
+msgid "All"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:183
+msgid "Name"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:184
+msgid "Tailnet IP"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:186
+msgid "Last Seen"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:187
+msgid "Role"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:95
+msgid "Exit node"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:98
+msgid "Advertising subnets"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:188
+msgid "Advertised Subnets"
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:69
 msgid "Interface Name"
 msgstr ""

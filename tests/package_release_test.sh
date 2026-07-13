@@ -75,6 +75,126 @@ assert_contains 'msgid "Peers"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "对端列表"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Peers"' po/zh_Hant/tailscale.po
 assert_contains 'msgstr "對端列表"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Tailscale Peers"' po/templates/tailscale.pot
+assert_contains 'msgid "Tailscale Peers"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "Tailscale 对端"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Tailscale Peers"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "Tailscale 對端"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "View all peers and manually probe whether traffic is direct or relayed through DERP."' po/templates/tailscale.pot
+assert_contains 'msgid "View all peers and manually probe whether traffic is direct or relayed through DERP."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "查看所有对端，并手动探测流量是直连还是通过 DERP 中继。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "View all peers and manually probe whether traffic is direct or relayed through DERP."' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "查看所有對端，並手動探測流量是直連還是透過 DERP 中繼。"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Unable to load Tailscale peer status"' po/templates/tailscale.pot
+assert_contains 'msgid "Unable to load Tailscale peer status"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "无法加载 Tailscale 对端状态。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Unable to load Tailscale peer status"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "無法載入 Tailscale 對端狀態。"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "No peers match the selected filter."' po/templates/tailscale.pot
+assert_contains 'msgid "No peers match the selected filter."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "没有对端符合所选筛选条件。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "No peers match the selected filter."' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "沒有對端符合所選篩選條件。"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "No probe target available"' po/templates/tailscale.pot
+assert_contains 'msgid "No probe target available"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "没有可用探测目标。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "No probe target available"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "沒有可用探測目標。"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Probe failed"' po/templates/tailscale.pot
+assert_contains 'msgid "Probe failed"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "探测失败"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Probe failed"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "探測失敗"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Not probed"' po/templates/tailscale.pot
+assert_contains 'msgid "Not probed"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "未探测"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Not probed"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "未探測"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Probing..."' po/templates/tailscale.pot
+assert_contains 'msgid "Probing..."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "探测中..."' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Probing..."' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "探測中..."' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Probe"' po/templates/tailscale.pot
+assert_contains 'msgid "Probe"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "探测"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Probe"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "探測"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Direct"' po/templates/tailscale.pot
+assert_contains 'msgid "Direct"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "直连"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Direct"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "直連"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "DERP"' po/templates/tailscale.pot
+assert_contains 'msgid "DERP"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "DERP 中继"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "DERP"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "DERP 中繼"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Failed"' po/templates/tailscale.pot
+assert_contains 'msgid "Failed"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "失败"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Failed"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "失敗"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Unknown"' po/templates/tailscale.pot
+assert_contains 'msgid "Unknown"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "未知"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Unknown"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "未知"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Filter"' po/templates/tailscale.pot
+assert_contains 'msgid "Filter"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "筛选"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Filter"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "篩選"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "All"' po/templates/tailscale.pot
+assert_contains 'msgid "All"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "全部"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "All"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "全部"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Online"' po/templates/tailscale.pot
+assert_contains 'msgid "Online"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "在线"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Online"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "在線"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Offline"' po/templates/tailscale.pot
+assert_contains 'msgid "Offline"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "离线"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Offline"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "離線"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Name"' po/templates/tailscale.pot
+assert_contains 'msgid "Name"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "名称"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Name"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "名稱"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Tailnet IP"' po/templates/tailscale.pot
+assert_contains 'msgid "Tailnet IP"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "Tailnet IP"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Tailnet IP"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "Tailnet IP"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Last Seen"' po/templates/tailscale.pot
+assert_contains 'msgid "Last Seen"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "最后在线"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Last Seen"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "最後在線"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Role"' po/templates/tailscale.pot
+assert_contains 'msgid "Role"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "角色"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Role"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "角色"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Exit node"' po/templates/tailscale.pot
+assert_contains 'msgid "Exit node"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "出口节点"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Exit node"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "出口節點"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Advertising subnets"' po/templates/tailscale.pot
+assert_contains 'msgid "Advertising subnets"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "发布网段"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Advertising subnets"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "發布網段"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Advertised Subnets"' po/templates/tailscale.pot
+assert_contains 'msgid "Advertised Subnets"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "已发布网段"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Advertised Subnets"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "已發布網段"' po/zh_Hant/tailscale.po
 
 assert_contains "Peer Keepalive" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "AdGuard DNS" htdocs/luci-static/resources/view/tailscale/setting.js

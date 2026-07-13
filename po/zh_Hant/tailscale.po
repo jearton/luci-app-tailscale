@@ -125,6 +125,94 @@ msgstr "接口信息"
 msgid "Peers"
 msgstr "對端列表"
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:216
+msgid "Tailscale Peers"
+msgstr "Tailscale 對端"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:217
+msgid "View all peers and manually probe whether traffic is direct or relayed through DERP."
+msgstr "查看所有對端，並手動探測流量是直連還是透過 DERP 中繼。"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:170
+msgid "Unable to load Tailscale peer status"
+msgstr "無法載入 Tailscale 對端狀態。"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:151
+msgid "No peers match the selected filter."
+msgstr "沒有對端符合所選篩選條件。"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:191
+msgid "No probe target available"
+msgstr "沒有可用探測目標。"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:55
+msgid "Probe failed"
+msgstr "探測失敗"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:74
+msgid "Not probed"
+msgstr "未探測"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:84
+msgid "Probing..."
+msgstr "探測中..."
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:85
+msgid "Probe"
+msgstr "探測"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:62
+msgid "Direct"
+msgstr "直連"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:63
+msgid "DERP"
+msgstr "DERP 中繼"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:64
+msgid "Failed"
+msgstr "失敗"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:64
+msgid "Unknown"
+msgstr "未知"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:133
+msgid "Filter"
+msgstr "篩選"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:142
+msgid "All"
+msgstr "全部"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:183
+msgid "Name"
+msgstr "名稱"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:184
+msgid "Tailnet IP"
+msgstr "Tailnet IP"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:186
+msgid "Last Seen"
+msgstr "最後在線"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:187
+msgid "Role"
+msgstr "角色"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:95
+msgid "Exit node"
+msgstr "出口節點"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:98
+msgid "Advertising subnets"
+msgstr "發布網段"
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:188
+msgid "Advertised Subnets"
+msgstr "已發布網段"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:69
 msgid "Interface Name"
 msgstr "接口名稱"
