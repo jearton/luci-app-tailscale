@@ -115,6 +115,10 @@ msgstr ""
 msgid "Interface Info"
 msgstr ""
 
+#: luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json:30
+msgid "Peers"
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:69
 msgid "Interface Name"
 msgstr ""

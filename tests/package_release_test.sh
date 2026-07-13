@@ -70,6 +70,11 @@ assert_contains '"title": "Peers"' root/usr/share/luci/menu.d/luci-app-tailscale
 assert_contains '"path": "tailscale/peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json
 assert_before '"admin/vpn/tailscale/interface"' '"admin/vpn/tailscale/peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json
 assert_before '"admin/vpn/tailscale/peers"' '"admin/vpn/tailscale/log"' root/usr/share/luci/menu.d/luci-app-tailscale.json
+assert_contains 'msgid "Peers"' po/templates/tailscale.pot
+assert_contains 'msgid "Peers"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "对端列表"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Peers"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "對端列表"' po/zh_Hant/tailscale.po
 
 assert_contains "Peer Keepalive" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "AdGuard DNS" htdocs/luci-static/resources/view/tailscale/setting.js

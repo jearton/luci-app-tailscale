@@ -121,6 +121,10 @@ msgstr "IPv6地址"
 msgid "Interface Info"
 msgstr "接口信息"
 
+#: luci-app-tailscale/root/usr/share/luci/menu.d/luci-app-tailscale.json:30
+msgid "Peers"
+msgstr "對端列表"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/interface.js:69
 msgid "Interface Name"
 msgstr "接口名稱"
