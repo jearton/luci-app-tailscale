@@ -141,6 +141,10 @@ msgstr "無法載入 Tailscale 對端狀態。"
 msgid "No peers match the selected filter."
 msgstr "沒有對端符合所選篩選條件。"
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:151
+msgid "No peers found"
+msgstr "沒有找到對端"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:191
 msgid "No probe target available"
 msgstr "沒有可用探測目標。"

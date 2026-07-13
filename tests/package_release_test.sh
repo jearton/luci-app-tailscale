@@ -95,6 +95,12 @@ assert_contains 'msgid "No peers match the selected filter."' po/zh_Hans/tailsca
 assert_contains 'msgstr "没有对端符合所选筛选条件。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "No peers match the selected filter."' po/zh_Hant/tailscale.po
 assert_contains 'msgstr "沒有對端符合所選篩選條件。"' po/zh_Hant/tailscale.po
+assert_contains "No peers found" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains 'msgid "No peers found"' po/templates/tailscale.pot
+assert_contains 'msgid "No peers found"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "没有找到对端"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "No peers found"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "沒有找到對端"' po/zh_Hant/tailscale.po
 assert_contains 'msgid "No probe target available"' po/templates/tailscale.pot
 assert_contains 'msgid "No probe target available"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "没有可用探测目标。"' po/zh_Hans/tailscale.po

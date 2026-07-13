@@ -220,7 +220,7 @@ return view.extend({
 						E('td', {
 							class: 'td left',
 							colspan: '7'
-						}, _('No peers match the selected filter.'))
+						}, state.peers.length ? _('No peers match the selected filter.') : _('No peers found'))
 					)
 				];
 			} else {

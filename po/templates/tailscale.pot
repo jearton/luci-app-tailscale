@@ -135,6 +135,10 @@ msgstr ""
 msgid "No peers match the selected filter."
 msgstr ""
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:151
+msgid "No peers found"
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:191
 msgid "No probe target available"
 msgstr ""
