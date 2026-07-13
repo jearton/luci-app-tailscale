@@ -109,6 +109,15 @@ assert_not_contains "padding:10px 12px" htdocs/luci-static/resources/view/tailsc
 assert_not_contains "grid-template-columns:24px 1fr" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "form.MultiValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_file htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "Tailscale Peers" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "filterMode" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "Advertising subnets" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "tailscale_peer_probe" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "Probe" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "DERP" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "Direct" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_not_contains "Probe all" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains 'msgid "Keepalive"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "保活"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Peer Keepalive"' po/zh_Hans/tailscale.po
