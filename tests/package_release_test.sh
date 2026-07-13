@@ -61,7 +61,10 @@ assert_file root/etc/init.d/tailscale
 assert_file root/usr/sbin/tailscale_helper
 assert_file root/usr/sbin/tailscale_keepalive
 assert_file root/usr/sbin/tailscale_adguard_dns_switch
+assert_file root/usr/sbin/tailscale_peer_probe
 assert_file root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_contains "tailscale_peer_probe" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_contains "Peer probe" root/usr/sbin/tailscale_peer_probe
 assert_file root/etc/uci-defaults/40_luci-tailscale
 
 assert_contains "Peer Keepalive" htdocs/luci-static/resources/view/tailscale/setting.js

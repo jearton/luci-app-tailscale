@@ -1,0 +1,108 @@
+#!/bin/sh
+
+set -eu
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+HELPER="$ROOT_DIR/root/usr/sbin/tailscale_peer_probe"
+TMP_DIR="${TMPDIR:-/tmp}/tailscale-peer-probe-test.$$"
+
+cleanup() {
+	rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+assert_contains() {
+	needle="$1"
+	haystack="$2"
+	case "$haystack" in
+		*"${needle}"*) ;;
+		*) fail "expected output to contain: $needle
+actual: $haystack" ;;
+	esac
+}
+
+assert_not_contains() {
+	needle="$1"
+	haystack="$2"
+	case "$haystack" in
+		*"${needle}"*) fail "expected output not to contain: $needle
+actual: $haystack" ;;
+	esac
+}
+
+mkdir -p "$TMP_DIR"
+
+cat >"$TMP_DIR/fake-tailscale" <<'SH'
+#!/bin/sh
+case "$*" in
+	"ping --c=1 --timeout=5s direct-peer")
+		echo "pong from direct-peer (100.64.2.2) via 192.168.188.1:41641 in 12.4ms"
+		exit 0
+		;;
+	"ping --c=1 --timeout=5s derp-peer")
+		echo "pong from derp-peer (100.64.2.1) via DERP(litata) in 41.8ms"
+		exit 0
+		;;
+	"ping --c=1 --timeout=5s weird-peer")
+		echo "pong from weird-peer using new format"
+		exit 0
+		;;
+	"ping --c=1 --timeout=5s failed-peer")
+		echo "timeout waiting for pong from failed-peer" >&2
+		exit 1
+		;;
+	*)
+		echo "unexpected fake tailscale args: $*" >&2
+		exit 99
+		;;
+esac
+SH
+chmod +x "$TMP_DIR/fake-tailscale"
+
+run_probe() {
+	TAILSCALE_BIN="$TMP_DIR/fake-tailscale" "$HELPER" "$@"
+}
+
+direct_output="$(run_probe direct-peer)"
+assert_contains '"peer":"direct-peer"' "$direct_output"
+assert_contains '"ok":true' "$direct_output"
+assert_contains '"path":"direct"' "$direct_output"
+assert_contains '"latency_ms":12.4' "$direct_output"
+assert_contains '"summary":"direct 12.4 ms"' "$direct_output"
+
+derp_output="$(run_probe derp-peer)"
+assert_contains '"peer":"derp-peer"' "$derp_output"
+assert_contains '"ok":true' "$derp_output"
+assert_contains '"path":"derp"' "$derp_output"
+assert_contains '"relay":"litata"' "$derp_output"
+assert_contains '"latency_ms":41.8' "$derp_output"
+assert_contains '"summary":"DERP litata 41.8 ms"' "$derp_output"
+
+unknown_output="$(run_probe weird-peer)"
+assert_contains '"peer":"weird-peer"' "$unknown_output"
+assert_contains '"ok":true' "$unknown_output"
+assert_contains '"path":"unknown"' "$unknown_output"
+assert_contains '"summary":"unknown path"' "$unknown_output"
+
+failed_output="$(run_probe failed-peer || true)"
+assert_contains '"peer":"failed-peer"' "$failed_output"
+assert_contains '"ok":false' "$failed_output"
+assert_contains '"path":"failed"' "$failed_output"
+assert_contains '"summary":"tailscale ping failed"' "$failed_output"
+
+invalid_output="$(run_probe 'bad peer;rm -rf /' || true)"
+assert_contains '"ok":false' "$invalid_output"
+assert_contains '"path":"failed"' "$invalid_output"
+assert_contains '"summary":"invalid peer argument"' "$invalid_output"
+assert_not_contains 'rm -rf' "$invalid_output"
+
+missing_arg_output="$("$HELPER" || true)"
+assert_contains '"ok":false' "$missing_arg_output"
+assert_contains '"summary":"usage: tailscale_peer_probe <peer>"' "$missing_arg_output"
+
+echo "tailscale_peer_probe tests passed"
