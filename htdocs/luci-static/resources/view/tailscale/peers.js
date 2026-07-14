@@ -27,6 +27,7 @@ function formatLastSeen(value) {
 function parseStatus(stdout) {
 	var parsed = JSON.parse(String(stdout || '{}'));
 	var peerEntries = parsed && parsed.Peer ? parsed.Peer : {};
+	var userEntries = parsed && parsed.User ? parsed.User : {};
 	var peers = [];
 
 	Object.keys(peerEntries).forEach(function(peerId) {
@@ -39,11 +40,18 @@ function parseStatus(stdout) {
 			? shortDnsName + ' (' + hostName + ')'
 			: (shortDnsName || hostName || dnsName || ip || peerId);
 		var routes = Array.isArray(peer.PrimaryRoutes) ? peer.PrimaryRoutes.filter(Boolean) : [];
+		var userKey = peer.UserID != null ? String(peer.UserID) : '';
+		var user = userKey ? (userEntries[userKey] || {}) : {};
+		var userDisplayName = String(user.DisplayName || '').trim();
+		var userLoginName = String(user.LoginName || '').trim();
 
 		peers.push({
 			id: peerId,
 			name: displayName,
 			ip: ip,
+			userKey: userKey || 'unknown',
+			userName: userDisplayName || userLoginName || '',
+			userLoginName: userLoginName,
 			online: !!peer.Online,
 			lastSeen: formatLastSeen(peer.LastSeen),
 			exitNode: !!peer.ExitNodeOption,
@@ -58,6 +66,40 @@ function parseStatus(stdout) {
 	});
 
 	return peers;
+}
+
+function buildPeerGroups(peers) {
+	var groupMap = Object.create(null);
+	var groups = [];
+
+	peers.forEach(function(peer) {
+		var userKey = peer.userKey || 'unknown';
+		var group = groupMap[userKey];
+
+		if (!group) {
+			group = groupMap[userKey] = {
+				key: userKey,
+				name: peer.userName || _('Unknown user'),
+				loginName: peer.userLoginName || '',
+				peers: []
+			};
+			groups.push(group);
+		}
+
+		group.peers.push(peer);
+	});
+
+	groups.sort(function(a, b) {
+		return String(a.name || '').localeCompare(String(b.name || ''));
+	});
+
+	groups.forEach(function(group) {
+		group.peers.sort(function(a, b) {
+			return String(a.name || '').localeCompare(String(b.name || ''));
+		});
+	});
+
+	return groups;
 }
 
 function parseProbeResult(stdout, errorMessage) {
@@ -224,32 +266,52 @@ return view.extend({
 					)
 				];
 			} else {
-				rows = filtered.map(function(peer) {
-					var result = state.probeResults[peer.id];
-					var probing = !!state.probing[peer.id];
-					var button = E('button', {
-						class: 'btn cbi-button cbi-button-action',
-						disabled: probing,
-						click: L.bind(probePeer, null, peer)
-					}, probing ? _('Probing...') : _('Probe'));
-					var resultNode = probing
-						? E('span', { style: 'color:#64748b' }, _('Probing...'))
-						: renderProbeResult(result);
-
-					return E('tr', { class: 'tr' }, [
-						E('td', { class: 'td left' }, peer.name),
-						E('td', { class: 'td left' }, peer.ip || '-'),
-						E('td', { class: 'td left' }, renderStatusLabel(peer.online)),
-						E('td', { class: 'td left' }, peer.lastSeen || '-'),
-						E('td', { class: 'td left' }, renderRoleBadges(peer)),
-						E('td', { class: 'td left' }, peer.routes.length ? peer.routes.join(', ') : '-'),
-						E('td', { class: 'td left' }, E('div', {
+				rows = [];
+				buildPeerGroups(filtered).forEach(function(group) {
+					rows.push(E('tr', { class: 'tr peer-group-header' },
+						E('td', {
+							class: 'td left',
+							colspan: '7',
+							style: 'background:#f8fafc;font-weight:600'
+						}, E('div', {
 							style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap'
 						}, [
-							button,
-							resultNode
+							E('span', {}, group.name),
+							group.loginName && group.loginName !== group.name
+								? E('span', { style: 'font-weight:400;color:#64748b' }, group.loginName)
+								: '',
+							E('span', { style: 'font-weight:400;color:#64748b' }, String(group.peers.length))
 						]))
-					]);
+					));
+
+					group.peers.forEach(function(peer) {
+						var result = state.probeResults[peer.id];
+						var probing = !!state.probing[peer.id];
+						var button = E('button', {
+							type: 'button',
+							class: 'btn cbi-button cbi-button-action',
+							disabled: probing ? 'disabled' : null,
+							click: L.bind(probePeer, null, peer)
+						}, probing ? _('Probing...') : _('Probe'));
+						var resultNode = probing
+							? E('span', { style: 'color:#64748b' }, _('Probing...'))
+							: renderProbeResult(result);
+
+						rows.push(E('tr', { class: 'tr' }, [
+							E('td', { class: 'td left' }, peer.name),
+							E('td', { class: 'td left' }, peer.ip || '-'),
+							E('td', { class: 'td left' }, renderStatusLabel(peer.online)),
+							E('td', { class: 'td left' }, peer.lastSeen || '-'),
+							E('td', { class: 'td left' }, renderRoleBadges(peer)),
+							E('td', { class: 'td left' }, peer.routes.length ? peer.routes.join(', ') : '-'),
+							E('td', { class: 'td left' }, E('div', {
+								style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap'
+							}, [
+								button,
+								resultNode
+							]))
+						]));
+					});
 				});
 			}
 

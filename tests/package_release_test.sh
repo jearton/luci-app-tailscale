@@ -238,6 +238,17 @@ assert_not_contains "form.MultiValue, 'keepalive_peers'" htdocs/luci-static/reso
 assert_file htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "Tailscale Peers" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "filterMode" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "buildPeerGroups" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "peer.userKey" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "peer-group-header" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "type: 'button'" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "disabled: probing ? 'disabled' : null" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_not_contains "disabled: probing," htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains 'msgid "Unknown user"' po/templates/tailscale.pot
+assert_contains 'msgid "Unknown user"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "未知用户"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Unknown user"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "未知使用者"' po/zh_Hant/tailscale.po
 assert_contains "Advertising subnets" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "tailscale_peer_probe" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "Probe" htdocs/luci-static/resources/view/tailscale/peers.js

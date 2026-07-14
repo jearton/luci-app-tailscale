@@ -520,3 +520,6 @@ msgstr ""
 
 msgid "Failure Threshold"
 msgstr ""
+
+msgid "Unknown user"
+msgstr ""

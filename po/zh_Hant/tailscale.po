@@ -526,3 +526,6 @@ msgstr "成功閾值"
 
 msgid "Failure Threshold"
 msgstr "失敗閾值"
+
+msgid "Unknown user"
+msgstr "未知使用者"
