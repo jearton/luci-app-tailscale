@@ -529,3 +529,6 @@ msgstr "失败阈值"
 
 msgid "Unknown user"
 msgstr "未知用户"
+
+msgid "Offline peers cannot be probed"
+msgstr "离线设备不可探测"

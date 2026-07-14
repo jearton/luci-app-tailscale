@@ -241,9 +241,19 @@ assert_contains "filterMode" htdocs/luci-static/resources/view/tailscale/peers.j
 assert_contains "buildPeerGroups" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "peer.userKey" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "peer-group-header" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "peer-group-title" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "border-left:4px solid #64748b" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "font-size:16px" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "peer.online ? '' : 'opacity:0.62'" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "Offline peers cannot be probed" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "type: 'button'" htdocs/luci-static/resources/view/tailscale/peers.js
-assert_contains "disabled: probing ? 'disabled' : null" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "disabled: probing || !peer.online ? 'disabled' : null" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_not_contains "disabled: probing," htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains 'msgid "Offline peers cannot be probed"' po/templates/tailscale.pot
+assert_contains 'msgid "Offline peers cannot be probed"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "离线设备不可探测"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Offline peers cannot be probed"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "離線設備不可探測"' po/zh_Hant/tailscale.po
 assert_contains 'msgid "Unknown user"' po/templates/tailscale.pot
 assert_contains 'msgid "Unknown user"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "未知用户"' po/zh_Hans/tailscale.po

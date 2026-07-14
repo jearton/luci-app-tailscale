@@ -523,3 +523,6 @@ msgstr ""
 
 msgid "Unknown user"
 msgstr ""
+
+msgid "Offline peers cannot be probed"
+msgstr ""

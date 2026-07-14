@@ -272,15 +272,18 @@ return view.extend({
 						E('td', {
 							class: 'td left',
 							colspan: '7',
-							style: 'background:#f8fafc;font-weight:600'
+							style: 'background:#f1f5f9;border-left:4px solid #64748b;font-weight:600;padding-top:10px;padding-bottom:10px'
 						}, E('div', {
-							style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap'
+							style: 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap'
 						}, [
-							E('span', {}, group.name),
+							E('span', {
+								class: 'peer-group-title',
+								style: 'font-size:16px;font-weight:700;color:#1e293b'
+							}, group.name),
 							group.loginName && group.loginName !== group.name
-								? E('span', { style: 'font-weight:400;color:#64748b' }, group.loginName)
+								? E('span', { style: 'font-weight:400;color:#64748b;font-size:13px' }, group.loginName)
 								: '',
-							E('span', { style: 'font-weight:400;color:#64748b' }, String(group.peers.length))
+							E('span', { style: 'font-weight:400;color:#64748b;font-size:13px' }, String(group.peers.length))
 						]))
 					));
 
@@ -290,14 +293,19 @@ return view.extend({
 						var button = E('button', {
 							type: 'button',
 							class: 'btn cbi-button cbi-button-action',
-							disabled: probing ? 'disabled' : null,
+							disabled: probing || !peer.online ? 'disabled' : null,
 							click: L.bind(probePeer, null, peer)
 						}, probing ? _('Probing...') : _('Probe'));
-						var resultNode = probing
+						var resultNode = !peer.online
+							? E('span', { style: 'color:#94a3b8' }, _('Offline peers cannot be probed'))
+							: (probing
 							? E('span', { style: 'color:#64748b' }, _('Probing...'))
-							: renderProbeResult(result);
+							: renderProbeResult(result));
 
-						rows.push(E('tr', { class: 'tr' }, [
+						rows.push(E('tr', {
+							class: 'tr',
+							style: peer.online ? '' : 'opacity:0.62'
+						}, [
 							E('td', { class: 'td left' }, peer.name),
 							E('td', { class: 'td left' }, peer.ip || '-'),
 							E('td', { class: 'td left' }, renderStatusLabel(peer.online)),
@@ -332,6 +340,9 @@ return view.extend({
 
 		async function probePeer(peer) {
 			var target = peer.probeTarget;
+
+			if (!peer.online)
+				return;
 
 			if (!target) {
 				state.probeResults[peer.id] = {
