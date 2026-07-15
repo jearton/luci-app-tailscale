@@ -263,6 +263,10 @@ assert_contains "paginatePeerGroups" htdocs/luci-static/resources/view/tailscale
 assert_contains "PEER_PAGE_SIZE_DEFAULT = 25" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "PEER_PAGE_SIZE_OPTIONS" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_peer_pagination_after_table htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "peer-pagination-summary" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "peer-pagination-controls" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "justify-content:flex-end" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "margin-left:auto" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "split oversized groups into dedicated pages" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "pageSize === 0" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "pageIndex = 0" htdocs/luci-static/resources/view/tailscale/peers.js

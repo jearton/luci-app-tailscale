@@ -415,38 +415,49 @@ return view.extend({
 			}
 
 			dom.content(paginationBox, E('div', {
-				style: 'display:flex;align-items:center;gap:10px;margin:10px 0 0 0;flex-wrap:wrap'
+				class: 'peer-pagination-bar',
+				style: 'display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 0 0;flex-wrap:wrap'
 			}, [
-				E('label', { for: 'pageSize' }, _('Items per page')),
-				pageSizeSelect,
-				E('span', { style: 'color:#64748b' }, _('Showing %d-%d of %d peers').format(page.start, page.end, page.total)),
-				E('span', { style: 'color:#64748b' }, _('Page %d / %d').format(page.pageIndex + 1, page.pageCount)),
-				E('button', {
-					type: 'button',
-					class: 'btn cbi-button',
-					disabled: page.pageIndex <= 0 ? 'disabled' : null,
-					click: function(ev) {
-						if (ev) {
-							ev.preventDefault();
-							ev.stopPropagation();
+				E('div', {
+					class: 'peer-pagination-summary',
+					style: 'display:flex;align-items:center;gap:10px;color:#64748b;flex:1 1 auto;min-width:220px;flex-wrap:wrap'
+				}, [
+					E('span', {}, _('Showing %d-%d of %d peers').format(page.start, page.end, page.total)),
+					E('span', {}, _('Page %d / %d').format(page.pageIndex + 1, page.pageCount))
+				]),
+				E('div', {
+					class: 'peer-pagination-controls',
+					style: 'display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-left:auto;flex-wrap:wrap'
+				}, [
+					E('label', { for: 'pageSize' }, _('Items per page')),
+					pageSizeSelect,
+					E('button', {
+						type: 'button',
+						class: 'btn cbi-button',
+						disabled: page.pageIndex <= 0 ? 'disabled' : null,
+						click: function(ev) {
+							if (ev) {
+								ev.preventDefault();
+								ev.stopPropagation();
+							}
+							pageIndex = Math.max(pageIndex - 1, 0);
+							renderRows(true);
 						}
-						pageIndex = Math.max(pageIndex - 1, 0);
-						renderRows(true);
-					}
-				}, _('Previous')),
-				E('button', {
-					type: 'button',
-					class: 'btn cbi-button',
-					disabled: page.pageIndex >= page.pageCount - 1 ? 'disabled' : null,
-					click: function(ev) {
-						if (ev) {
-							ev.preventDefault();
-							ev.stopPropagation();
+					}, _('Previous')),
+					E('button', {
+						type: 'button',
+						class: 'btn cbi-button',
+						disabled: page.pageIndex >= page.pageCount - 1 ? 'disabled' : null,
+						click: function(ev) {
+							if (ev) {
+								ev.preventDefault();
+								ev.stopPropagation();
+							}
+							pageIndex = Math.min(pageIndex + 1, page.pageCount - 1);
+							renderRows(true);
 						}
-						pageIndex = Math.min(pageIndex + 1, page.pageCount - 1);
-						renderRows(true);
-					}
-				}, _('Next'))
+					}, _('Next'))
+				])
 			]));
 		}
 
