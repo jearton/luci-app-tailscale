@@ -195,6 +195,24 @@ msgstr "筛选"
 msgid "All"
 msgstr "全部"
 
+msgid "Items per page"
+msgstr "每页数量"
+
+msgid "All peers"
+msgstr "全部对端"
+
+msgid "Showing %d-%d of %d peers"
+msgstr "显示第 %d-%d 台，共 %d 台"
+
+msgid "Page %d / %d"
+msgstr "第 %d / %d 页"
+
+msgid "Previous"
+msgstr "上一页"
+
+msgid "Next"
+msgstr "下一页"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:183
 msgid "Name"
 msgstr "名称"

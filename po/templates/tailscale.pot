@@ -189,6 +189,24 @@ msgstr ""
 msgid "All"
 msgstr ""
 
+msgid "Items per page"
+msgstr ""
+
+msgid "All peers"
+msgstr ""
+
+msgid "Showing %d-%d of %d peers"
+msgstr ""
+
+msgid "Page %d / %d"
+msgstr ""
+
+msgid "Previous"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:183
 msgid "Name"
 msgstr ""

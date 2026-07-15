@@ -11,6 +11,8 @@
 
 var PROBE_MAX_ATTEMPTS = 5;
 var PROBE_RETRY_DELAY_MS = 350;
+var PEER_PAGE_SIZE_DEFAULT = 25;
+var PEER_PAGE_SIZE_OPTIONS = [25, 50, 100, 0];
 
 function formatLastSeen(value) {
 	if (!value)
@@ -103,6 +105,87 @@ function buildPeerGroups(peers) {
 	});
 
 	return groups;
+}
+
+function cloneGroupWithPeers(group, peers) {
+	return {
+		key: group.key,
+		name: group.name,
+		loginName: group.loginName,
+		peers: peers
+	};
+}
+
+function countPagePeers(groups) {
+	return groups.reduce(function(count, group) {
+		return count + group.peers.length;
+	}, 0);
+}
+
+function paginatePeerGroups(groups, pageSize, requestedPageIndex) {
+	var total = countPagePeers(groups);
+	var pages = [];
+	var currentGroups = [];
+	var currentCount = 0;
+
+	if (!total || pageSize === 0) {
+		pages = total ? [{ groups: groups, count: total }] : [];
+	} else {
+		var pushCurrent = function() {
+			if (!currentGroups.length)
+				return;
+
+			pages.push({
+				groups: currentGroups,
+				count: currentCount
+			});
+			currentGroups = [];
+			currentCount = 0;
+		};
+
+		groups.forEach(function(group) {
+			var peers = group.peers || [];
+
+			/* split oversized groups into dedicated pages; do not mix their tail with other users */
+			if (peers.length > pageSize) {
+				pushCurrent();
+
+				for (var i = 0; i < peers.length; i += pageSize) {
+					var chunk = peers.slice(i, i + pageSize);
+					pages.push({
+						groups: [cloneGroupWithPeers(group, chunk)],
+						count: chunk.length
+					});
+				}
+				return;
+			}
+
+			if (currentCount > 0 && currentCount + peers.length > pageSize)
+				pushCurrent();
+
+			currentGroups.push(group);
+			currentCount += peers.length;
+		});
+
+		pushCurrent();
+	}
+
+	var pageCount = Math.max(pages.length, 1);
+	var pageIndex = Math.min(Math.max(Number(requestedPageIndex) || 0, 0), pageCount - 1);
+	var start = 0;
+
+	for (var j = 0; j < pageIndex; j++)
+		start += pages[j].count;
+
+	return {
+		groups: pages[pageIndex] ? pages[pageIndex].groups : [],
+		pageIndex: pageIndex,
+		pageCount: pageCount,
+		pageSize: pageSize,
+		total: total,
+		start: total ? start + 1 : 0,
+		end: total ? start + (pages[pageIndex] ? pages[pageIndex].count : 0) : 0
+	};
 }
 
 function parseProbeResult(stdout, errorMessage) {
@@ -284,12 +367,16 @@ return view.extend({
 			probing: Object.create(null)
 		};
 		var filterMode = 'all';
+		var pageIndex = 0;
+		var pageSize = PEER_PAGE_SIZE_DEFAULT;
 		var tbody = E('tbody');
 		var statusBox = E('div');
+		var paginationBox = E('div');
 		var filterSelect = E('select', {
 			id: 'filterMode',
 			change: function(ev) {
 				filterMode = ev.target.value;
+				pageIndex = 0;
 				renderRows();
 			}
 		}, [
@@ -297,6 +384,19 @@ return view.extend({
 			E('option', { value: 'online' }, _('Online')),
 			E('option', { value: 'subnets' }, _('Advertising subnets'))
 		]);
+		var pageSizeSelect = E('select', {
+			id: 'pageSize',
+			change: function(ev) {
+				pageSize = Number(ev.target.value);
+				pageIndex = 0;
+				renderRows();
+			}
+		}, PEER_PAGE_SIZE_OPTIONS.map(function(size) {
+			return E('option', {
+				value: String(size),
+				selected: size === pageSize ? 'selected' : null
+			}, size ? String(size) : _('All peers'));
+		}));
 
 		function filterPeers(peers) {
 			if (filterMode === 'online')
@@ -308,10 +408,56 @@ return view.extend({
 			return peers;
 		}
 
+		function renderPagination(page) {
+			if (!page.total) {
+				dom.content(paginationBox, '');
+				return;
+			}
+
+			dom.content(paginationBox, E('div', {
+				style: 'display:flex;align-items:center;gap:10px;margin:0 0 10px 0;flex-wrap:wrap'
+			}, [
+				E('label', { for: 'pageSize' }, _('Items per page')),
+				pageSizeSelect,
+				E('span', { style: 'color:#64748b' }, _('Showing %d-%d of %d peers').format(page.start, page.end, page.total)),
+				E('span', { style: 'color:#64748b' }, _('Page %d / %d').format(page.pageIndex + 1, page.pageCount)),
+				E('button', {
+					type: 'button',
+					class: 'btn cbi-button',
+					disabled: page.pageIndex <= 0 ? 'disabled' : null,
+					click: function(ev) {
+						if (ev) {
+							ev.preventDefault();
+							ev.stopPropagation();
+						}
+						pageIndex = Math.max(pageIndex - 1, 0);
+						renderRows(true);
+					}
+				}, _('Previous')),
+				E('button', {
+					type: 'button',
+					class: 'btn cbi-button',
+					disabled: page.pageIndex >= page.pageCount - 1 ? 'disabled' : null,
+					click: function(ev) {
+						if (ev) {
+							ev.preventDefault();
+							ev.stopPropagation();
+						}
+						pageIndex = Math.min(pageIndex + 1, page.pageCount - 1);
+						renderRows(true);
+					}
+				}, _('Next'))
+			]));
+		}
+
 		function renderRows(keepScroll) {
 			var filtered = filterPeers(state.peers);
+			var page = paginatePeerGroups(buildPeerGroups(filtered), pageSize, pageIndex);
 			var rows;
 			var scrollState = keepScroll ? getScrollState() : null;
+
+			pageIndex = page.pageIndex;
+			renderPagination(page);
 
 			if (state.error) {
 				dom.content(statusBox, E('div', {
@@ -332,7 +478,7 @@ return view.extend({
 				];
 			} else {
 				rows = [];
-				buildPeerGroups(filtered).forEach(function(group) {
+				page.groups.forEach(function(group) {
 					rows.push(E('tr', { class: 'tr peer-group-header' },
 						E('td', {
 							class: 'td left',
@@ -492,6 +638,7 @@ return view.extend({
 				E('label', { for: 'filterMode' }, _('Filter')),
 				filterSelect
 			]),
+			paginationBox,
 			E('table', {
 				class: 'table',
 				style: 'table-layout:fixed;width:100%'

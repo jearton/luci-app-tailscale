@@ -241,9 +241,16 @@ assert_not_contains "grid-template-columns:24px 1fr" htdocs/luci-static/resource
 assert_not_contains "form.AbstractValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "form.MultiValue, 'keepalive_peers'" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_file htdocs/luci-static/resources/view/tailscale/peers.js
+assert_file tests/peers_pagination_test.js
 assert_contains "Tailscale Peers" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "filterMode" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "buildPeerGroups" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "paginatePeerGroups" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "PEER_PAGE_SIZE_DEFAULT = 25" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "PEER_PAGE_SIZE_OPTIONS" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "split oversized groups into dedicated pages" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "pageSize === 0" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "pageIndex = 0" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "peer.userKey" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "peer-group-header" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "peer-group-title" htdocs/luci-static/resources/view/tailscale/peers.js
@@ -273,6 +280,18 @@ assert_contains 'msgid "Continuing probe %d/%d"' po/zh_Hant/tailscale.po
 assert_contains 'msgstr "繼續探測 %d/%d"' po/zh_Hant/tailscale.po
 assert_contains 'msgid "%d probes; direct connection not established"' po/zh_Hant/tailscale.po
 assert_contains 'msgstr "%d 次探測後仍未建立直連"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Items per page"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "每页数量"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "All peers"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "全部对端"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Showing %d-%d of %d peers"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "显示第 %d-%d 台，共 %d 台"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Page %d / %d"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "第 %d / %d 页"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Previous"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "上一页"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Next"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "下一页"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Offline peers cannot be probed"' po/templates/tailscale.pot
 assert_contains 'msgid "Offline peers cannot be probed"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "离线设备不可探测"' po/zh_Hans/tailscale.po
