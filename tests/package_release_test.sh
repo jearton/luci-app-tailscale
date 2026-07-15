@@ -64,6 +64,10 @@ assert_file root/usr/sbin/tailscale_adguard_dns_switch
 assert_file root/usr/sbin/tailscale_peer_probe
 assert_file root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains "Peer probe" root/usr/sbin/tailscale_peer_probe
+assert_contains "LUCI_DEPENDS:=+tailscale +jshn +curl +jq" Makefile
+assert_contains '"$JQ_BIN" -nc' root/usr/sbin/tailscale_peer_probe
+assert_contains "--argjson ok" root/usr/sbin/tailscale_peer_probe
+assert_not_contains "json_escape()" root/usr/sbin/tailscale_peer_probe
 assert_file root/etc/uci-defaults/40_luci-tailscale
 assert_contains '"admin/vpn/tailscale/peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json
 assert_contains '"title": "Peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json

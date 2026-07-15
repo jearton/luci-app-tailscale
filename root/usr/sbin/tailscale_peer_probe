@@ -3,25 +3,7 @@
 # Peer probe for LuCI Tailscale diagnostics.
 
 TAILSCALE_BIN="${TAILSCALE_BIN:-/usr/sbin/tailscale}"
-
-json_escape() {
-	printf '%s' "$1" | awk '
-	{
-		gsub(/\\/,"\\\\")
-		gsub(/"/, "\\\\\"")
-		gsub(/\t/, "\\\\t")
-		gsub(/\r/, "\\\\r")
-		if (NR > 1) {
-			printf "\\\\n"
-		}
-		printf "%s", $0
-	}
-	'
-}
-
-json_string() {
-	printf '"%s"' "$(json_escape "$1")"
-}
+JQ_BIN="${JQ_BIN:-/usr/bin/jq}"
 
 emit_json() {
 	peer="$1"
@@ -31,20 +13,19 @@ emit_json() {
 	relay="$5"
 	summary="$6"
 	raw="$7"
+	latency_json="null"
 
-	printf '{'
-	printf '"peer":'; json_string "$peer"; printf ','
-	printf '"ok":%s,' "$ok"
-	printf '"path":'; json_string "$path"; printf ','
-	if [ -n "$latency_ms" ]; then
-		printf '"latency_ms":%s,' "$latency_ms"
-	else
-		printf '"latency_ms":null,'
-	fi
-	printf '"relay":'; json_string "$relay"; printf ','
-	printf '"summary":'; json_string "$summary"; printf ','
-	printf '"raw":'; json_string "$raw"
-	printf '}\n'
+	[ -n "$latency_ms" ] && latency_json="$latency_ms"
+
+	"$JQ_BIN" -nc \
+		--arg peer "$peer" \
+		--arg path "$path" \
+		--arg relay "$relay" \
+		--arg summary "$summary" \
+		--arg raw "$raw" \
+		--argjson ok "$ok" \
+		--argjson latency_ms "$latency_json" \
+		'{peer:$peer,ok:$ok,path:$path,latency_ms:$latency_ms,relay:$relay,summary:$summary,raw:$raw}'
 }
 
 usage() {

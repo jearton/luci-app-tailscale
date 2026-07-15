@@ -35,6 +35,14 @@ actual: $haystack" ;;
 	esac
 }
 
+assert_valid_json() {
+	output="$1"
+	if command -v node >/dev/null 2>&1; then
+		printf '%s' "$output" | node -e 'let s = ""; process.stdin.on("data", c => s += c); process.stdin.on("end", () => { JSON.parse(s); });' \
+			|| fail "expected valid JSON, actual: $output"
+	fi
+}
+
 mkdir -p "$TMP_DIR"
 
 cat >"$TMP_DIR/fake-tailscale" <<'SH'
@@ -62,7 +70,8 @@ cat >"$TMP_DIR/fake-tailscale" <<'SH'
 		exit 0
 		;;
 	"ping --c=1 --timeout=5s failed-peer")
-		echo "timeout waiting for pong from failed-peer" >&2
+		echo 'ping "100.64.2.6" timed out' >&2
+		echo "no reply" >&2
 		exit 1
 		;;
 	*)
@@ -78,6 +87,7 @@ run_probe() {
 }
 
 direct_output="$(run_probe direct-peer)"
+assert_valid_json "$direct_output"
 assert_contains '"peer":"direct-peer"' "$direct_output"
 assert_contains '"ok":true' "$direct_output"
 assert_contains '"path":"direct"' "$direct_output"
@@ -85,6 +95,7 @@ assert_contains '"latency_ms":12.4' "$direct_output"
 assert_contains '"summary":"direct 12.4 ms"' "$direct_output"
 
 derp_output="$(run_probe derp-peer)"
+assert_valid_json "$derp_output"
 assert_contains '"peer":"derp-peer"' "$derp_output"
 assert_contains '"ok":true' "$derp_output"
 assert_contains '"path":"derp"' "$derp_output"
@@ -93,6 +104,7 @@ assert_contains '"latency_ms":41.8' "$derp_output"
 assert_contains '"summary":"DERP litata 41.8 ms"' "$derp_output"
 
 derp_no_direct_output="$(run_probe derp-no-direct-peer)"
+assert_valid_json "$derp_no_direct_output"
 assert_contains '"peer":"derp-no-direct-peer"' "$derp_no_direct_output"
 assert_contains '"ok":true' "$derp_no_direct_output"
 assert_contains '"path":"derp"' "$derp_no_direct_output"
@@ -101,39 +113,44 @@ assert_contains '"latency_ms":67' "$derp_no_direct_output"
 assert_contains '"summary":"DERP litata 67 ms - direct connection not established"' "$derp_no_direct_output"
 
 unknown_output="$(run_probe weird-peer)"
+assert_valid_json "$unknown_output"
 assert_contains '"peer":"weird-peer"' "$unknown_output"
 assert_contains '"ok":true' "$unknown_output"
 assert_contains '"path":"unknown"' "$unknown_output"
 assert_contains '"summary":"unknown path"' "$unknown_output"
 
 control_output="$(run_probe control-peer)"
+assert_valid_json "$control_output"
 assert_contains '"peer":"control-peer"' "$control_output"
 assert_contains '"ok":true' "$control_output"
 assert_contains '"path":"direct"' "$control_output"
 assert_contains '"latency_ms":15.0' "$control_output"
 assert_contains '"summary":"direct 15.0 ms"' "$control_output"
-assert_contains '\\"' "$control_output"
+assert_contains '\"' "$control_output"
 assert_contains '\\' "$control_output"
-assert_contains '\\t' "$control_output"
-assert_contains '\\r' "$control_output"
-assert_contains '\\n' "$control_output"
+assert_contains '\t' "$control_output"
+assert_contains '\r' "$control_output"
+assert_contains '\n' "$control_output"
 
 control_output_lines="$(printf '%s\n' "$control_output" | wc -l | tr -d ' ')"
 [ "$control_output_lines" -eq 1 ] || fail "expected control peer output to be single-line JSON: $control_output"
 
 failed_output="$(run_probe failed-peer || true)"
+assert_valid_json "$failed_output"
 assert_contains '"peer":"failed-peer"' "$failed_output"
 assert_contains '"ok":false' "$failed_output"
 assert_contains '"path":"failed"' "$failed_output"
 assert_contains '"summary":"tailscale ping failed"' "$failed_output"
 
 invalid_output="$(run_probe 'bad peer;rm -rf /' || true)"
+assert_valid_json "$invalid_output"
 assert_contains '"ok":false' "$invalid_output"
 assert_contains '"path":"failed"' "$invalid_output"
 assert_contains '"summary":"invalid peer argument"' "$invalid_output"
 assert_not_contains 'rm -rf' "$invalid_output"
 
 missing_arg_output="$("$HELPER" || true)"
+assert_valid_json "$missing_arg_output"
 assert_contains '"ok":false' "$missing_arg_output"
 assert_contains '"summary":"usage: tailscale_peer_probe <peer>"' "$missing_arg_output"
 
