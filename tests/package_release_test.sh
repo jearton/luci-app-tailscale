@@ -248,6 +248,10 @@ assert_contains "peer.online ? '' : 'opacity:0.62'" htdocs/luci-static/resources
 assert_contains "Offline peers cannot be probed" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "type: 'button'" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "disabled: probing || !peer.online ? 'disabled' : null" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "preventDefault" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "stopPropagation" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "window.scrollTo" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "renderRows(true)" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_not_contains "disabled: probing," htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains 'msgid "Offline peers cannot be probed"' po/templates/tailscale.pot
 assert_contains 'msgid "Offline peers cannot be probed"' po/zh_Hans/tailscale.po

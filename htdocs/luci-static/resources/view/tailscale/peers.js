@@ -244,9 +244,16 @@ return view.extend({
 			return peers;
 		}
 
-		function renderRows() {
+		function renderRows(keepScroll) {
 			var filtered = filterPeers(state.peers);
 			var rows;
+			var scrollX = 0;
+			var scrollY = 0;
+
+			if (keepScroll && typeof window !== 'undefined') {
+				scrollX = window.scrollX || 0;
+				scrollY = window.scrollY || 0;
+			}
 
 			if (state.error) {
 				dom.content(statusBox, E('div', {
@@ -294,7 +301,14 @@ return view.extend({
 							type: 'button',
 							class: 'btn cbi-button cbi-button-action',
 							disabled: probing || !peer.online ? 'disabled' : null,
-							click: L.bind(probePeer, null, peer)
+							click: function(ev) {
+								if (ev) {
+									ev.preventDefault();
+									ev.stopPropagation();
+								}
+
+								return probePeer(peer);
+							}
 						}, probing ? _('Probing...') : _('Probe'));
 						var resultNode = !peer.online
 							? E('span', { style: 'color:#94a3b8' }, _('Offline peers cannot be probed'))
@@ -324,6 +338,17 @@ return view.extend({
 			}
 
 			dom.content(tbody, rows);
+
+			if (keepScroll && typeof window !== 'undefined' && window.scrollTo) {
+				var restoreScroll = function() {
+					window.scrollTo(scrollX, scrollY);
+				};
+
+				if (window.requestAnimationFrame)
+					window.requestAnimationFrame(restoreScroll);
+				else
+					restoreScroll();
+			}
 		}
 
 		async function refreshPeers() {
@@ -335,7 +360,7 @@ return view.extend({
 				state.peers = [];
 				state.error = next.error;
 			}
-			renderRows();
+			renderRows(true);
 		}
 
 		async function probePeer(peer) {
@@ -351,12 +376,12 @@ return view.extend({
 					summary: _('No probe target available'),
 					raw: ''
 				};
-				renderRows();
+				renderRows(true);
 				return;
 			}
 
 			state.probing[peer.id] = true;
-			renderRows();
+			renderRows(true);
 
 			try {
 				var res = await fs.exec('/usr/sbin/tailscale_peer_probe', [target]);
@@ -368,7 +393,7 @@ return view.extend({
 				state.probeResults[peer.id] = parseProbeResult('', String((e && (e.message || e.stderr || e.stdout)) || _('Probe failed')));
 			} finally {
 				state.probing[peer.id] = false;
-				renderRows();
+				renderRows(true);
 			}
 		}
 

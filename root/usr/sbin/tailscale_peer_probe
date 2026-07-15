@@ -74,11 +74,7 @@ rc="$?"
 
 latency_ms="$(printf '%s\n' "$raw" | sed -nE 's/.* in ([0-9]+(\.[0-9]+)?)ms.*/\1/p' | head -n 1)"
 relay="$(printf '%s\n' "$raw" | sed -nE 's/.*DERP\(([^)]*)\).*/\1/p' | head -n 1)"
-
-if [ "$rc" -ne 0 ]; then
-	emit_json "$peer" false failed "" "" "tailscale ping failed" "$raw"
-	exit 0
-fi
+direct_note="$(printf '%s\n' "$raw" | sed -n '/direct connection not established/{p;q;}')"
 
 if [ -n "$relay" ]; then
 	if [ -n "$latency_ms" ]; then
@@ -86,7 +82,13 @@ if [ -n "$relay" ]; then
 	else
 		summary="DERP $relay"
 	fi
+	[ -n "$direct_note" ] && summary="$summary - direct connection not established"
 	emit_json "$peer" true derp "$latency_ms" "$relay" "$summary" "$raw"
+	exit 0
+fi
+
+if [ "$rc" -ne 0 ]; then
+	emit_json "$peer" false failed "" "" "tailscale ping failed" "$raw"
 	exit 0
 fi
 
