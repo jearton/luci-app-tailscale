@@ -44,6 +44,20 @@ assert_before() {
 	[ "$first_line" -lt "$second_line" ] || fail "$file should place '$first' before '$second'"
 }
 
+assert_peer_pagination_after_table() {
+	file="$1"
+	awk '
+		/return E\('\''div'\'', \{ class: '\''cbi-map'\'' \}/ { in_return = 1 }
+		in_return && /E\('\''table'\'', \{/ { table_line = NR }
+		in_return && /^[[:space:]]*paginationBox[[:space:]]*$/ { pagination_line = NR }
+		END {
+			if (table_line && pagination_line && table_line < pagination_line)
+				exit 0
+			exit 1
+		}
+	' "$ROOT_DIR/$file" || fail "$file should render peer pagination below the peer table"
+}
+
 assert_not_exists() {
 	[ ! -e "$ROOT_DIR/$1" ] || fail "$1 should not exist"
 }
@@ -248,6 +262,7 @@ assert_contains "buildPeerGroups" htdocs/luci-static/resources/view/tailscale/pe
 assert_contains "paginatePeerGroups" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "PEER_PAGE_SIZE_DEFAULT = 25" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "PEER_PAGE_SIZE_OPTIONS" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_peer_pagination_after_table htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "split oversized groups into dedicated pages" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "pageSize === 0" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "pageIndex = 0" htdocs/luci-static/resources/view/tailscale/peers.js

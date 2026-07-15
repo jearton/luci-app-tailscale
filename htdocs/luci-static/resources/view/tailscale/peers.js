@@ -415,7 +415,7 @@ return view.extend({
 			}
 
 			dom.content(paginationBox, E('div', {
-				style: 'display:flex;align-items:center;gap:10px;margin:0 0 10px 0;flex-wrap:wrap'
+				style: 'display:flex;align-items:center;gap:10px;margin:10px 0 0 0;flex-wrap:wrap'
 			}, [
 				E('label', { for: 'pageSize' }, _('Items per page')),
 				pageSizeSelect,
@@ -638,7 +638,6 @@ return view.extend({
 				E('label', { for: 'filterMode' }, _('Filter')),
 				filterSelect
 			]),
-			paginationBox,
 			E('table', {
 				class: 'table',
 				style: 'table-layout:fixed;width:100%'
@@ -653,7 +652,8 @@ return view.extend({
 					E('th', { class: 'th left' }, _('Probe'))
 				])),
 				tbody
-			])
+			]),
+			paginationBox
 		]);
 	},
 
