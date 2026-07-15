@@ -70,6 +70,8 @@ assert_contains "luci-app-tailscale_*.ipk" .github/workflows/release.yml
 assert_contains "luci-app-tailscale-*.apk" .github/workflows/release.yml
 
 assert_file htdocs/luci-static/resources/view/tailscale/setting.js
+assert_file tests/setting_preflight_test.js
+assert_contains "refreshAdguardPreflightStatus" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_file root/etc/config/tailscale
 assert_file root/etc/init.d/tailscale
 assert_file root/usr/sbin/tailscale_helper
@@ -227,7 +229,13 @@ assert_before "AdGuard API URL" "_adguard_dns_status" htdocs/luci-static/resourc
 assert_before "AdGuard Username" "_adguard_dns_status" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_before "AdGuard Password" "_adguard_dns_status" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_before "_adguard_dns_status" "Enable AdGuard DNS Auto Switch" htdocs/luci-static/resources/view/tailscale/setting.js
-assert_contains "adguardEnvironmentChecks" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "ADGUARD_PREFLIGHT_CHECKS" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "window.setTimeout(refreshAdguardPreflightStatus" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains 'msgid "Checking ..."' po/templates/tailscale.pot
+assert_contains 'msgid "Checking ..."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "检查中..."' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Checking ..."' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "檢查中..."' po/zh_Hant/tailscale.po
 assert_not_contains "AdGuard DNS auto switch cannot be enabled until every environment status check passes." htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "keepalivePeerAliases" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "shortDnsName" htdocs/luci-static/resources/view/tailscale/setting.js

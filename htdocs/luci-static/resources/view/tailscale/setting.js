@@ -19,6 +19,14 @@ const callServiceList = rpc.declare({
 	expect: { '': {} }
 });
 
+const ADGUARD_PREFLIGHT_CHECKS = [
+	{ key: 'adguard_process', label: _('AdGuard process') },
+	{ key: 'port_53_adguard', label: _('Port 53 is AdGuard') },
+	{ key: 'dhcp_advertises_lan_dns', label: _('LAN DHCP advertises this router as DNS') },
+	{ key: 'adguard_api', label: _('AdGuard API') },
+	{ key: 'health_check', label: _('Tailnet DNS health check') }
+];
+
 async function getInterfaceSubnets(interfaces = ['lan', 'wan']) {
 	const networks = await network.getNetworks();
 	return [...new Set(
@@ -146,8 +154,44 @@ function parseKeyValues(stdout) {
 }
 
 function renderCheck(value) {
+	if (value !== 'pass' && value !== 'fail')
+		return E('span', { style: 'color:#687586' }, _('Checking ...'));
+
 	const ok = value === 'pass';
 	return E('span', { style: 'color:' + (ok ? 'green' : 'red') }, ok ? _('Pass') : _('Fail'));
+}
+
+function adguardPreflightCellId(key) {
+	return 'adguard_preflight_' + key;
+}
+
+function normalizeAdguardPreflightResult(res) {
+	return parseKeyValues(res && res.stdout);
+}
+
+async function fetchAdguardPreflightStatus() {
+	try {
+		return normalizeAdguardPreflightResult(await fs.exec("/usr/sbin/tailscale_adguard_dns_switch", ["--preflight"]));
+	} catch (e) {
+		let stdout = e && e.stdout ? e.stdout : '';
+		const error = e && (e.message || e.stderr || e) || 'preflight command failed';
+		if (stdout && stdout.charAt(stdout.length - 1) !== '\n')
+			stdout += '\n';
+		return parseKeyValues(stdout + 'ready=fail\nerror=' + String(error).replace(/\n/g, ' ') + '\n');
+	}
+}
+
+async function refreshAdguardPreflightStatus() {
+	const status = await fetchAdguardPreflightStatus();
+
+	ADGUARD_PREFLIGHT_CHECKS.forEach(function(check) {
+		const cell = document.getElementById(adguardPreflightCellId(check.key));
+		if (!cell)
+			return;
+
+		cell.innerHTML = '';
+		cell.appendChild(renderCheck(status[check.key] || 'fail'));
+	});
 }
 
 function hasFormListValue(option, section_id) {
@@ -161,14 +205,7 @@ return view.extend({
 		return Promise.all([
 			uci.load('tailscale'),
 			getStatus(),
-			getInterfaceSubnets(),
-			fs.exec("/usr/sbin/tailscale_adguard_dns_switch", ["--preflight"]).catch(function(e) {
-				let stdout = e && e.stdout ? e.stdout : '';
-				const error = e && (e.message || e.stderr || e) || 'preflight command failed';
-				if (stdout && stdout.charAt(stdout.length - 1) !== '\n')
-					stdout += '\n';
-				return { stdout: stdout + 'ready=fail\nerror=' + String(error).replace(/\n/g, ' ') + '\n' };
-			})
+			getInterfaceSubnets()
 		]);
 	},
 
@@ -180,14 +217,7 @@ return view.extend({
 		const peers = statusData.peers;
 		const hasAuthKey = !!uci.get('tailscale', 'settings', 'authkey');
 		const savedKeepalivePeers = toList(uci.get('tailscale', 'settings', 'keepalive_peers'));
-		const adguardPreflight = parseKeyValues((data[3] || {}).stdout);
 		const hasAdguardPassword = !!uci.get('tailscale', 'settings', 'adguard_password');
-		const adguardEnvironmentChecks = [
-			'adguard_process',
-			'port_53_adguard',
-			'dhcp_advertises_lan_dns',
-			'adguard_api'
-		];
 
 		m = new form.Map('tailscale', _('Tailscale'), _('Tailscale is a cross-platform and easy to use virtual LAN.'));
 
@@ -476,13 +506,12 @@ return view.extend({
 
 		o = s.taboption('adguard_dns', form.DummyValue, '_adguard_dns_status', _('Status'));
 		o.renderWidget = function() {
-			return E('div', { class: 'table' }, [
-				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('AdGuard process')), E('div', { class: 'td' }, renderCheck(adguardPreflight.adguard_process))]),
-				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Port 53 is AdGuard')), E('div', { class: 'td' }, renderCheck(adguardPreflight.port_53_adguard))]),
-				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('LAN DHCP advertises this router as DNS')), E('div', { class: 'td' }, renderCheck(adguardPreflight.dhcp_advertises_lan_dns))]),
-				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('AdGuard API')), E('div', { class: 'td' }, renderCheck(adguardPreflight.adguard_api))]),
-				E('div', { class: 'tr' }, [E('div', { class: 'td left' }, _('Tailnet DNS health check')), E('div', { class: 'td' }, renderCheck(adguardPreflight.health_check))])
-			]);
+			return E('div', { class: 'table' }, ADGUARD_PREFLIGHT_CHECKS.map(function(check) {
+				return E('div', { class: 'tr' }, [
+					E('div', { class: 'td left' }, check.label),
+					E('div', { class: 'td', id: adguardPreflightCellId(check.key) }, renderCheck())
+				]);
+			}));
 		};
 
 		o = s.taboption('adguard_dns', form.Flag, 'adguard_dns_switch_enabled', _('Enable AdGuard DNS Auto Switch'), _('Only enable when all status checks pass.'));
@@ -572,6 +601,9 @@ return view.extend({
 		};
 		o.remove = function() {};
 
-		return m.render();
+		return Promise.resolve(m.render()).then(function(node) {
+			window.setTimeout(refreshAdguardPreflightStatus, 0);
+			return node;
+		});
 	}
 });

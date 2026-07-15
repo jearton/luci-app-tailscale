@@ -488,6 +488,9 @@ msgstr "留空则保留现有 AdGuard 密码；填写新值则覆盖。"
 msgid "Status"
 msgstr "状态"
 
+msgid "Checking ..."
+msgstr "检查中..."
+
 msgid "Pass"
 msgstr "通过"
 

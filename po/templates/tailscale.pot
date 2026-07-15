@@ -482,6 +482,9 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
+msgid "Checking ..."
+msgstr ""
+
 msgid "Pass"
 msgstr ""
 
