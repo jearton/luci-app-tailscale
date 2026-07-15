@@ -392,6 +392,15 @@ msgstr ""
 msgid "Unable to load log data:"
 msgstr ""
 
+msgid "Log is empty."
+msgstr ""
+
+msgid "Unknown error"
+msgstr ""
+
+msgid "logread command not found"
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:256
 msgid "Use %s to deploy a private server."
 msgstr ""

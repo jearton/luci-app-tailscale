@@ -327,6 +327,13 @@ assert_contains "Probe" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "DERP" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "Direct" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_not_contains "Probe all" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_file tests/log_view_test.js
+assert_contains "formatLogLines" htdocs/luci-static/resources/view/tailscale/log.js
+assert_contains "formatLogError" htdocs/luci-static/resources/view/tailscale/log.js
+assert_contains "Log is empty." po/zh_Hans/tailscale.po
+assert_contains "日志为空。" po/zh_Hans/tailscale.po
+assert_contains "logread command not found" po/zh_Hans/tailscale.po
+assert_contains "未找到 logread 命令" po/zh_Hans/tailscale.po
 assert_contains 'msgid "Keepalive"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "保活"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Peer Keepalive"' po/zh_Hans/tailscale.po

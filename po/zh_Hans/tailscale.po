@@ -398,6 +398,15 @@ msgstr "无法获取接口信息：%s。"
 msgid "Unable to load log data:"
 msgstr "无法读取日志数据："
 
+msgid "Log is empty."
+msgstr "日志为空。"
+
+msgid "Unknown error"
+msgstr "未知错误"
+
+msgid "logread command not found"
+msgstr "未找到 logread 命令"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:256
 msgid "Use %s to deploy a private server."
 msgstr "使用 %s 部署私有服务器"
