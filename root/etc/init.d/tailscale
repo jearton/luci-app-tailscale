@@ -22,8 +22,9 @@ section_enabled() {
 
 tailscale_helper() {
 	local cfg="$1"
-	local accept_routes hostname accept_dns advertise_exit_node exit_node advertise_routes disable_snat_subnet_routes access flags login_server authkey std_out std_err
+	local accept_routes hostname accept_dns advertise_exit_node exit_node advertise_routes disable_snat_subnet_routes allow_wan_direct access flags login_server authkey std_out std_err port
 
+	config_get port $cfg 'port'
 	config_get_bool accept_routes $cfg 'accept_routes' 0
 	config_get hostname $cfg 'hostname'
 	config_get_bool accept_dns $cfg 'accept_dns' 1
@@ -31,6 +32,7 @@ tailscale_helper() {
 	config_get exit_node $cfg 'exit_node'
 	config_get advertise_routes $cfg 'advertise_routes'
 	config_get_bool disable_snat_subnet_routes $cfg 'disable_snat_subnet_routes' 0
+	config_get_bool allow_wan_direct $cfg 'allow_wan_direct' 0
 	config_get access $cfg 'access'
 	config_get flags $cfg 'flags'
 	config_get login_server $cfg 'login_server'
@@ -64,6 +66,8 @@ tailscale_helper() {
 		EXIT_NODE="$exit_node" \
 		ACCESS="$access" \
 		DISABLE_SNAT_SUBNET_ROUTES="$disable_snat_subnet_routes" \
+		ALLOW_WAN_DIRECT="$allow_wan_direct" \
+		TAILSCALE_PORT="${port:-41641}" \
 		TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH"
 
 	procd_set_param stdout "$std_out"

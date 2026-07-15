@@ -338,6 +338,12 @@ msgstr ""
 msgid "Set the Tailscale port number."
 msgstr ""
 
+msgid "Allow WAN Direct"
+msgstr ""
+
+msgid "Allow inbound UDP traffic from WAN to the local Tailscale listen port so remote peers can establish direct connections without first using DERP."
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:217
 msgid "Site To Site"
 msgstr ""

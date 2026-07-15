@@ -108,7 +108,7 @@ set_value() {
 delete_value() {
 	key="$1"
 	tmp="$db.tmp"
-	awk -F= -v key="$key" '$1 != key { print }' "$db" >"$tmp"
+	awk -F= -v key="$key" '$1 != key && index($1, key ".") != 1 { print }' "$db" >"$tmp"
 	mv "$tmp" "$db"
 	printf 'delete %s\n' "$key" >>"$changes"
 }
@@ -139,11 +139,21 @@ case "$cmd" in
 		;;
 	changes)
 		if [ -s "$changes" ]; then
-			cat "$changes"
+			if [ -n "${1:-}" ]; then
+				awk -v pkg="$1" '$2 ~ "^" pkg "\\." { print }' "$changes"
+			else
+				cat "$changes"
+			fi
 		fi
 		;;
 	commit)
-		: >"$changes"
+		if [ -n "${1:-}" ]; then
+			tmp="$changes.tmp"
+			awk -v pkg="$1" '$2 !~ "^" pkg "\\." { print }' "$changes" >"$tmp"
+			mv "$tmp" "$changes"
+		else
+			: >"$changes"
+		fi
 		printf 'commit %s\n' "${1:-}" >>"${UCI_COMMIT_LOG:?}"
 		;;
 	revert)
@@ -220,9 +230,13 @@ chmod +x "$TMP_DIR/dnsmasq-init"
 
 run_helper() {
 	exit_node="$1"
+	allow_wan_direct="${2:-0}"
+	tailscale_port="${3:-41641}"
 	ACCESS=
 	ACCEPT_DNS=0
 	DISABLE_SNAT_SUBNET_ROUTES=0
+	ALLOW_WAN_DIRECT="$allow_wan_direct"
+	TAILSCALE_PORT="$tailscale_port"
 	UCI_DB="$TMP_DIR/uci_db"
 	UCI_CHANGES_LOG="$TMP_DIR/uci_changes.log"
 	UCI_COMMIT_LOG="$TMP_DIR/uci_commit.log"
@@ -242,7 +256,7 @@ run_helper() {
 	TAILSCALE_INIT="$TMP_DIR/tailscale-init"
 	DNSMASQ_INIT="$TMP_DIR/dnsmasq-init"
 	TAILSCALE_HELPER_STATE_DIR="$TMP_DIR/state"
-	export ACCESS ACCEPT_DNS DISABLE_SNAT_SUBNET_ROUTES UCI_DB UCI_CHANGES_LOG UCI_COMMIT_LOG UCI_REVERT_LOG
+	export ACCESS ACCEPT_DNS DISABLE_SNAT_SUBNET_ROUTES ALLOW_WAN_DIRECT TAILSCALE_PORT UCI_DB UCI_CHANGES_LOG UCI_COMMIT_LOG UCI_REVERT_LOG
 	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG PATH
 	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT TAILSCALE_HELPER_STATE_DIR
 	EXIT_NODE="$exit_node" export EXIT_NODE
@@ -290,5 +304,31 @@ fi
 [ ! -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "helper should clear the exit-node firewall restore state after reconciliation"
 
 assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "helper should reload firewall after restoring exit-node changes"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 1 41641
+
+assert_contains "firewall.ts_wan_direct=rule" "$(cat "$TMP_DIR/uci_db")" "WAN direct enable should create a named firewall rule"
+assert_contains "firewall.ts_wan_direct.name=Allow-Tailscale-WAN-41641" "$(cat "$TMP_DIR/uci_db")" "WAN direct rule should use the configured Tailscale listen port in the rule name"
+assert_contains "firewall.ts_wan_direct.src=wan" "$(cat "$TMP_DIR/uci_db")" "WAN direct rule should come from the wan zone"
+assert_contains "firewall.ts_wan_direct.proto=udp" "$(cat "$TMP_DIR/uci_db")" "WAN direct rule should allow UDP"
+assert_contains "firewall.ts_wan_direct.dest_port=41641" "$(cat "$TMP_DIR/uci_db")" "WAN direct rule should target the configured listen port"
+assert_contains "firewall.ts_wan_direct.target=ACCEPT" "$(cat "$TMP_DIR/uci_db")" "WAN direct rule should accept matching packets"
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "WAN direct rule changes should reload firewall"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 1 41641
+wan_direct_count="$(awk -F= '$1 == "firewall.ts_wan_direct" { count++ } END { print count + 0 }' "$TMP_DIR/uci_db")"
+[ "$wan_direct_count" = "1" ] || fail "reapplying WAN direct should keep exactly one named firewall rule
+actual: $wan_direct_count"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641
+if grep -F 'firewall.ts_wan_direct' "$TMP_DIR/uci_db" >/dev/null; then
+	fail "WAN direct disable should remove the named firewall rule"
+fi
 
 echo "tailscale_helper network cleanup tests passed"

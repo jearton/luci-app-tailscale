@@ -13,6 +13,8 @@ TAILSCALE_INIT="${TAILSCALE_INIT:-/etc/init.d/tailscale}"
 TAILSCALE_HELPER_STATE_DIR="${TAILSCALE_HELPER_STATE_DIR:-/var/lib/tailscale}"
 EXIT_NODE_FIREWALL_STATE_FILE="$TAILSCALE_HELPER_STATE_DIR/exit_node_firewall_state"
 LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale.lock}"
+TAILSCALE_PORT="${TAILSCALE_PORT:-41641}"
+ALLOW_WAN_DIRECT="${ALLOW_WAN_DIRECT:-0}"
 
 log_error() {
 	"$LOGGER_CMD" -p daemon.err -t tailscale_helper "$(date '+%Y/%m/%d %H:%M:%S') $1"
@@ -56,6 +58,31 @@ find_lan_wan_forwarding() {
 			}
 		}
 	'
+}
+
+valid_port() {
+	case "$1" in
+		''|*[!0-9]*) return 1 ;;
+		*) [ "$1" -ge 1 ] && [ "$1" -le 65535 ] ;;
+	esac
+}
+
+configure_wan_direct_rule() {
+	local port
+
+	port="$TAILSCALE_PORT"
+	valid_port "$port" || port=41641
+
+	uci -q delete firewall.ts_wan_direct
+
+	[ "$ALLOW_WAN_DIRECT" = "1" ] || return 0
+
+	uci set firewall.ts_wan_direct='rule' || return 1
+	uci set firewall.ts_wan_direct.name="Allow-Tailscale-WAN-$port" || return 1
+	uci set firewall.ts_wan_direct.src='wan' || return 1
+	uci set firewall.ts_wan_direct.proto='udp' || return 1
+	uci set firewall.ts_wan_direct.dest_port="$port" || return 1
+	uci set firewall.ts_wan_direct.target='ACCEPT' || return 1
 }
 
 save_exit_node_firewall_state() {
@@ -194,6 +221,7 @@ uci -q delete firewall.ts_ac_lan
 uci -q delete firewall.ts_ac_wan
 uci -q delete firewall.lan_ac_ts
 uci -q delete firewall.wan_ac_ts
+configure_wan_direct_rule || revert_exit "Failed to configure Tailscale WAN direct firewall rule."
 if [ -n "$ACCESS" ]; then
 	tszone_masq=1
 	[ "$DISABLE_SNAT_SUBNET_ROUTES" = "1" ] && tszone_masq=0

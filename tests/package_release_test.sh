@@ -81,6 +81,22 @@ assert_file root/usr/sbin/tailscale_peer_probe
 assert_file root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains "Peer probe" root/usr/sbin/tailscale_peer_probe
 assert_contains "LUCI_DEPENDS:=+tailscale +jshn +curl +jq" Makefile
+assert_contains "allow_wan_direct" root/etc/config/tailscale
+assert_contains "allow_wan_direct" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "Allow WAN Direct" htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "ALLOW_WAN_DIRECT" root/etc/init.d/tailscale
+assert_contains "TAILSCALE_PORT" root/etc/init.d/tailscale
+assert_contains "firewall.ts_wan_direct" root/usr/sbin/tailscale_helper
+assert_contains "Allow-Tailscale-WAN-" root/usr/sbin/tailscale_helper
+assert_contains "firewall.ts_wan_direct.src='wan'" root/usr/sbin/tailscale_helper
+assert_contains "firewall.ts_wan_direct.proto='udp'" root/usr/sbin/tailscale_helper
+assert_contains "firewall.ts_wan_direct.dest_port" root/usr/sbin/tailscale_helper
+assert_contains "firewall.ts_wan_direct.target='ACCEPT'" root/usr/sbin/tailscale_helper
+assert_contains 'msgid "Allow WAN Direct"' po/templates/tailscale.pot
+assert_contains 'msgid "Allow WAN Direct"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "允许 WAN 直连"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Allow WAN Direct"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "允許 WAN 直連"' po/zh_Hant/tailscale.po
 assert_contains '"$JQ_BIN" -nc' root/usr/sbin/tailscale_peer_probe
 assert_contains "--argjson ok" root/usr/sbin/tailscale_peer_probe
 assert_contains "ping --c=1 --timeout=2s" root/usr/sbin/tailscale_peer_probe

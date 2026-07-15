@@ -344,6 +344,12 @@ msgstr "伺服器地址"
 msgid "Set the Tailscale port number."
 msgstr "設置 Tailscale 端口號。"
 
+msgid "Allow WAN Direct"
+msgstr "允許 WAN 直連"
+
+msgid "Allow inbound UDP traffic from WAN to the local Tailscale listen port so remote peers can establish direct connections without first using DERP."
+msgstr "允許 WAN 入站 UDP 流量訪問本機 Tailscale 監聽端口，使遠端節點可冷啟動直連，不必先經過 DERP。"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:217
 msgid "Site To Site"
 msgstr "子網互通"

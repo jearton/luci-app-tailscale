@@ -263,6 +263,10 @@ return view.extend({
 		o.default = '41641';
 		o.rmempty = false;
 
+		o = s.taboption('basic', form.Flag, 'allow_wan_direct', _('Allow WAN Direct'), _('Allow inbound UDP traffic from WAN to the local Tailscale listen port so remote peers can establish direct connections without first using DERP.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
 		o = s.taboption('basic', form.Value, 'config_path', _('Workdir'), _('The working directory contains config files, audit logs, and runtime info.'));
 		o.default = '/etc/tailscale';
 		o.rmempty = false;
