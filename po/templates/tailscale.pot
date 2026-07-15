@@ -344,6 +344,12 @@ msgstr ""
 msgid "Allow inbound UDP traffic from WAN to the local Tailscale listen port so remote peers can establish direct connections without first using DERP."
 msgstr ""
 
+msgid "WAN Direct Source Zones"
+msgstr ""
+
+msgid "Firewall source zones allowed to reach the local Tailscale listen port when WAN direct is enabled."
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:217
 msgid "Site To Site"
 msgstr ""

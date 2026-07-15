@@ -20,9 +20,13 @@ section_enabled() {
 	[ $enabled -gt 0 ]
 }
 
+append_wan_direct_zone() {
+	wan_direct_zones="${wan_direct_zones:+$wan_direct_zones }$1"
+}
+
 tailscale_helper() {
 	local cfg="$1"
-	local accept_routes hostname accept_dns advertise_exit_node exit_node advertise_routes disable_snat_subnet_routes allow_wan_direct access flags login_server authkey std_out std_err port
+	local accept_routes hostname accept_dns advertise_exit_node exit_node advertise_routes disable_snat_subnet_routes allow_wan_direct wan_direct_zones access flags login_server authkey std_out std_err port
 
 	config_get port $cfg 'port'
 	config_get_bool accept_routes $cfg 'accept_routes' 0
@@ -33,6 +37,9 @@ tailscale_helper() {
 	config_get advertise_routes $cfg 'advertise_routes'
 	config_get_bool disable_snat_subnet_routes $cfg 'disable_snat_subnet_routes' 0
 	config_get_bool allow_wan_direct $cfg 'allow_wan_direct' 0
+	wan_direct_zones=""
+	config_list_foreach "$cfg" 'wan_direct_zones' append_wan_direct_zone
+	wan_direct_zones="${wan_direct_zones:-wan}"
 	config_get access $cfg 'access'
 	config_get flags $cfg 'flags'
 	config_get login_server $cfg 'login_server'
@@ -67,6 +74,7 @@ tailscale_helper() {
 		ACCESS="$access" \
 		DISABLE_SNAT_SUBNET_ROUTES="$disable_snat_subnet_routes" \
 		ALLOW_WAN_DIRECT="$allow_wan_direct" \
+		WAN_DIRECT_ZONES="$wan_direct_zones" \
 		TAILSCALE_PORT="${port:-41641}" \
 		TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH"
 

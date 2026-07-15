@@ -350,6 +350,12 @@ msgstr "允許 WAN 直連"
 msgid "Allow inbound UDP traffic from WAN to the local Tailscale listen port so remote peers can establish direct connections without first using DERP."
 msgstr "允許 WAN 入站 UDP 流量訪問本機 Tailscale 監聽端口，使遠端節點可冷啟動直連，不必先經過 DERP。"
 
+msgid "WAN Direct Source Zones"
+msgstr "WAN 直連來源區域"
+
+msgid "Firewall source zones allowed to reach the local Tailscale listen port when WAN direct is enabled."
+msgstr "允許訪問本機 Tailscale 監聽端口的防火牆來源區域。多 WAN 環境可填寫多個區域。"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:217
 msgid "Site To Site"
 msgstr "子網互通"

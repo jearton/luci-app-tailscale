@@ -5,6 +5,8 @@ config tailscale 'settings'
 	option port '41641'
 	# Allow WAN inbound UDP traffic to the local Tailscale listen port for first-packet direct connections
 	#option allow_wan_direct '0'
+	# Firewall source zones used when WAN direct is enabled
+	list wan_direct_zones 'wan'
 	# Path to config file
 	option config_path '/etc/tailscale'
 	# Default to using nftables - change below to 'iptables' if still using iptables

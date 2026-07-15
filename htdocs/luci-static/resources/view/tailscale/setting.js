@@ -200,10 +200,18 @@ function hasFormListValue(option, section_id) {
 	}).filter(Boolean).length > 0;
 }
 
+function getFirewallZones() {
+	const zones = uci.sections('firewall', 'zone')
+		.map(function(zone) { return zone.name; })
+		.filter(Boolean);
+	return zones.length ? zones : ['wan'];
+}
+
 return view.extend({
 	load() {
 		return Promise.all([
 			uci.load('tailscale'),
+			uci.load('firewall'),
 			getStatus(),
 			getInterfaceSubnets()
 		]);
@@ -211,8 +219,9 @@ return view.extend({
 
 	render(data) {
 		let m, s, o;
-		const statusData = data[1];
-		const interfaceSubnets = data[2];
+		const statusData = data[2];
+		const interfaceSubnets = data[3];
+		const firewallZones = getFirewallZones();
 		const onlineExitNodes = statusData.onlineExitNodes;
 		const peers = statusData.peers;
 		const hasAuthKey = !!uci.get('tailscale', 'settings', 'authkey');
@@ -265,6 +274,14 @@ return view.extend({
 
 		o = s.taboption('basic', form.Flag, 'allow_wan_direct', _('Allow WAN Direct'), _('Allow inbound UDP traffic from WAN to the local Tailscale listen port so remote peers can establish direct connections without first using DERP.'));
 		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('basic', form.DynamicList, 'wan_direct_zones', _('WAN Direct Source Zones'), _('Firewall source zones allowed to reach the local Tailscale listen port when WAN direct is enabled.'));
+		firewallZones.forEach(function(zone) {
+			o.value(zone, zone);
+		});
+		o.default = 'wan';
+		o.depends('allow_wan_direct', '1');
 		o.rmempty = false;
 
 		o = s.taboption('basic', form.Value, 'config_path', _('Workdir'), _('The working directory contains config files, audit logs, and runtime info.'));

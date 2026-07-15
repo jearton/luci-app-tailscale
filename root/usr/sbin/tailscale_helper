@@ -15,6 +15,7 @@ EXIT_NODE_FIREWALL_STATE_FILE="$TAILSCALE_HELPER_STATE_DIR/exit_node_firewall_st
 LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale.lock}"
 TAILSCALE_PORT="${TAILSCALE_PORT:-41641}"
 ALLOW_WAN_DIRECT="${ALLOW_WAN_DIRECT:-0}"
+WAN_DIRECT_ZONES="${WAN_DIRECT_ZONES:-wan}"
 
 log_error() {
 	"$LOGGER_CMD" -p daemon.err -t tailscale_helper "$(date '+%Y/%m/%d %H:%M:%S') $1"
@@ -67,22 +68,52 @@ valid_port() {
 	esac
 }
 
+normalize_uci_id() {
+	printf '%s' "$1" | sed 's/[^A-Za-z0-9_]/_/g'
+}
+
+delete_wan_direct_rules() {
+	local section
+
+	uci -q delete firewall.ts_wan_direct
+	for section in $(uci -q show firewall | sed -n 's/^firewall\.\(ts_wan_direct_[^.=]*\)=rule$/\1/p'); do
+		uci -q delete "firewall.$section"
+	done
+}
+
 configure_wan_direct_rule() {
-	local port
+	local port zones zone zone_id section index seen
 
 	port="$TAILSCALE_PORT"
 	valid_port "$port" || port=41641
 
-	uci -q delete firewall.ts_wan_direct
+	delete_wan_direct_rules
 
 	[ "$ALLOW_WAN_DIRECT" = "1" ] || return 0
 
-	uci set firewall.ts_wan_direct='rule' || return 1
-	uci set firewall.ts_wan_direct.name="Allow-Tailscale-WAN-$port" || return 1
-	uci set firewall.ts_wan_direct.src='wan' || return 1
-	uci set firewall.ts_wan_direct.proto='udp' || return 1
-	uci set firewall.ts_wan_direct.dest_port="$port" || return 1
-	uci set firewall.ts_wan_direct.target='ACCEPT' || return 1
+	zones="${WAN_DIRECT_ZONES:-wan}"
+	index=0
+	seen=" "
+	for zone in $zones; do
+		[ -n "$zone" ] || continue
+		case "$seen" in
+			*" $zone "*) continue ;;
+		esac
+		seen="${seen}${zone} "
+		index=$((index + 1))
+		zone_id="$(normalize_uci_id "$zone")"
+		[ -n "$zone_id" ] || zone_id="zone"
+		section="ts_wan_direct_${index}_${zone_id}"
+
+		uci set "firewall.$section=rule" || return 1
+		uci set "firewall.$section.name=Allow-Tailscale-WAN-$port-$zone" || return 1
+		uci set "firewall.$section.src=$zone" || return 1
+		uci set "firewall.$section.proto=udp" || return 1
+		uci set "firewall.$section.dest_port=$port" || return 1
+		uci set "firewall.$section.target=ACCEPT" || return 1
+	done
+
+	[ "$index" -gt 0 ] || return 1
 }
 
 save_exit_node_firewall_state() {
