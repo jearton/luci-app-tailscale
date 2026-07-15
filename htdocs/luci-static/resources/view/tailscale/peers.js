@@ -180,6 +180,44 @@ function renderRoleBadges(peer) {
 	return badges.length ? badges : '-';
 }
 
+function getScrollState() {
+	if (typeof document === 'undefined' || typeof window === 'undefined')
+		return null;
+
+	var scrollElement = document.querySelector('.main-right') || document.scrollingElement || document.documentElement;
+
+	return {
+		scrollElement: scrollElement,
+		scrollLeft: scrollElement ? scrollElement.scrollLeft || 0 : window.scrollX || 0,
+		scrollTop: scrollElement ? scrollElement.scrollTop || 0 : window.scrollY || 0,
+		windowScrollX: window.scrollX || 0,
+		windowScrollY: window.scrollY || 0
+	};
+}
+
+function restoreScrollState(state) {
+	if (!state || typeof window === 'undefined')
+		return;
+
+	var restore = function() {
+		var scrollElement = state.scrollElement;
+
+		if (scrollElement) {
+			scrollElement.scrollLeft = state.scrollLeft;
+			scrollElement.scrollTop = state.scrollTop;
+		} else if (window.scrollTo) {
+			window.scrollTo(state.windowScrollX, state.windowScrollY);
+		}
+	};
+
+	restore();
+
+	if (window.requestAnimationFrame)
+		window.requestAnimationFrame(restore);
+	else
+		setTimeout(restore, 0);
+}
+
 async function loadPeerState() {
 	try {
 		var res = await fs.exec('/usr/sbin/tailscale', ['status', '--json']);
@@ -247,13 +285,7 @@ return view.extend({
 		function renderRows(keepScroll) {
 			var filtered = filterPeers(state.peers);
 			var rows;
-			var scrollX = 0;
-			var scrollY = 0;
-
-			if (keepScroll && typeof window !== 'undefined') {
-				scrollX = window.scrollX || 0;
-				scrollY = window.scrollY || 0;
-			}
+			var scrollState = keepScroll ? getScrollState() : null;
 
 			if (state.error) {
 				dom.content(statusBox, E('div', {
@@ -339,16 +371,7 @@ return view.extend({
 
 			dom.content(tbody, rows);
 
-			if (keepScroll && typeof window !== 'undefined' && window.scrollTo) {
-				var restoreScroll = function() {
-					window.scrollTo(scrollX, scrollY);
-				};
-
-				if (window.requestAnimationFrame)
-					window.requestAnimationFrame(restoreScroll);
-				else
-					restoreScroll();
-			}
+			restoreScrollState(scrollState);
 		}
 
 		async function refreshPeers() {

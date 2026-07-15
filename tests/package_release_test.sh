@@ -251,6 +251,9 @@ assert_contains "disabled: probing || !peer.online ? 'disabled' : null" htdocs/l
 assert_contains "preventDefault" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "stopPropagation" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "window.scrollTo" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "querySelector('.main-right')" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "restoreScrollState" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "scrollElement.scrollTop" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "renderRows(true)" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_not_contains "disabled: probing," htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains 'msgid "Offline peers cannot be probed"' po/templates/tailscale.pot
