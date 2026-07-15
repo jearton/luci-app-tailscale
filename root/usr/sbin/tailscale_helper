@@ -12,6 +12,7 @@ DNSMASQ_INIT="${DNSMASQ_INIT:-/etc/init.d/dnsmasq}"
 TAILSCALE_INIT="${TAILSCALE_INIT:-/etc/init.d/tailscale}"
 TAILSCALE_HELPER_STATE_DIR="${TAILSCALE_HELPER_STATE_DIR:-/var/lib/tailscale}"
 EXIT_NODE_FIREWALL_STATE_FILE="$TAILSCALE_HELPER_STATE_DIR/exit_node_firewall_state"
+FIREWALL_PENDING_STATE_FILE="${FIREWALL_PENDING_STATE_FILE:-/var/run/tailscale-firewall-pending}"
 LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale.lock}"
 TAILSCALE_PORT="${TAILSCALE_PORT:-41641}"
 ALLOW_WAN_DIRECT="${ALLOW_WAN_DIRECT:-0}"
@@ -72,13 +73,91 @@ normalize_uci_id() {
 	printf '%s' "$1" | sed 's/[^A-Za-z0-9_]/_/g'
 }
 
-delete_wan_direct_rules() {
-	local section
+firewall_section_has_only_options() {
+	local section="$1"
+	local allowed="$2"
+	local output option
 
-	uci -q delete firewall.ts_wan_direct
-	for section in $(uci -q show firewall | sed -n 's/^firewall\.\(ts_wan_direct_[^.=]*\)=rule$/\1/p'); do
-		uci -q delete "firewall.$section"
+	output="$(uci -q show "firewall.$section" 2>/dev/null)" || return 1
+	for option in $(printf '%s\n' "$output" | sed -n "s/^firewall\\.$section\\.\\([^.=]*\\)=.*/\\1/p"); do
+		case " $allowed " in
+			*" $option "*) ;;
+			*) return 1 ;;
+		esac
 	done
+}
+
+delete_named_firewall_sections() {
+	local output section
+
+	output="$(uci -q show firewall 2>/dev/null)" || return 1
+	for section in "$@"; do
+		if printf '%s\n' "$output" | grep -q "^firewall\\.$section="; then
+			uci -q delete "firewall.$section" || return 1
+		fi
+	done
+}
+
+delete_wan_direct_rules() {
+	local output section
+
+	output="$(uci -q show firewall 2>/dev/null)" || return 1
+	if printf '%s\n' "$output" | grep -q '^firewall\.ts_wan_direct='; then
+		uci -q delete firewall.ts_wan_direct || return 1
+	fi
+	for section in $(printf '%s\n' "$output" | sed -n 's/^firewall\.\(ts_wan_direct_[^.=]*\)=[^=]*$/\1/p'); do
+		uci -q delete "firewall.$section" || return 1
+	done
+}
+
+wan_direct_rule_matches() {
+	local section="$1"
+	local port="$2"
+	local zone="$3"
+
+	[ "$(uci -q get "firewall.$section" 2>/dev/null)" = "rule" ] &&
+		[ "$(uci -q get "firewall.$section.name" 2>/dev/null)" = "Allow-Tailscale-WAN-$port-$zone" ] &&
+		[ "$(uci -q get "firewall.$section.src" 2>/dev/null)" = "$zone" ] &&
+		[ "$(uci -q get "firewall.$section.proto" 2>/dev/null)" = "udp" ] &&
+		[ "$(uci -q get "firewall.$section.dest_port" 2>/dev/null)" = "$port" ] &&
+		[ "$(uci -q get "firewall.$section.target" 2>/dev/null)" = "ACCEPT" ] &&
+		firewall_section_has_only_options "$section" "name src proto dest_port target"
+}
+
+wan_direct_rules_match() {
+	local port="$1"
+	local output zones zone zone_id section index seen current_count
+
+	output="$(uci -q show firewall 2>/dev/null)" || return 1
+	printf '%s\n' "$output" | grep -q '^firewall\.ts_wan_direct=' && return 1
+
+	current_count=0
+	for section in $(printf '%s\n' "$output" | sed -n 's/^firewall\.\(ts_wan_direct_[^.=]*\)=[^=]*$/\1/p'); do
+		current_count=$((current_count + 1))
+	done
+
+	if [ "$ALLOW_WAN_DIRECT" != "1" ]; then
+		[ "$current_count" -eq 0 ]
+		return $?
+	fi
+
+	zones="${WAN_DIRECT_ZONES:-wan}"
+	index=0
+	seen=" "
+	for zone in $zones; do
+		[ -n "$zone" ] || continue
+		case "$seen" in
+			*" $zone "*) continue ;;
+		esac
+		seen="${seen}${zone} "
+		index=$((index + 1))
+		zone_id="$(normalize_uci_id "$zone")"
+		[ -n "$zone_id" ] || zone_id="zone"
+		section="ts_wan_direct_${index}_${zone_id}"
+		wan_direct_rule_matches "$section" "$port" "$zone" || return 1
+	done
+
+	[ "$index" -gt 0 ] && [ "$current_count" -eq "$index" ]
 }
 
 configure_wan_direct_rule() {
@@ -86,8 +165,9 @@ configure_wan_direct_rule() {
 
 	port="$TAILSCALE_PORT"
 	valid_port "$port" || port=41641
+	wan_direct_rules_match "$port" && return 0
 
-	delete_wan_direct_rules
+	delete_wan_direct_rules || return 1
 
 	[ "$ALLOW_WAN_DIRECT" = "1" ] || return 0
 
@@ -114,6 +194,123 @@ configure_wan_direct_rule() {
 	done
 
 	[ "$index" -gt 0 ] || return 1
+}
+
+access_has() {
+	case " $ACCESS " in
+		*" $1 "*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+tailscale_zone_matches() {
+	local masq="$1"
+
+	[ "$(uci -q get firewall.tszone 2>/dev/null)" = "zone" ] &&
+		[ "$(uci -q get firewall.tszone.input 2>/dev/null)" = "ACCEPT" ] &&
+		[ "$(uci -q get firewall.tszone.output 2>/dev/null)" = "ACCEPT" ] &&
+		[ "$(uci -q get firewall.tszone.forward 2>/dev/null)" = "ACCEPT" ] &&
+		[ "$(uci -q get firewall.tszone.masq 2>/dev/null)" = "$masq" ] &&
+		[ "$(uci -q get firewall.tszone.mtu_fix 2>/dev/null)" = "1" ] &&
+		[ "$(uci -q get firewall.tszone.name 2>/dev/null)" = "tailscale" ] &&
+		[ "$(uci -q get firewall.tszone.device 2>/dev/null)" = "tailscale0" ] &&
+		firewall_section_has_only_options tszone "input output forward masq mtu_fix name device"
+}
+
+forwarding_rule_matches() {
+	local section="$1"
+	local src="$2"
+	local dest="$3"
+
+	[ "$(uci -q get "firewall.$section" 2>/dev/null)" = "forwarding" ] &&
+		[ "$(uci -q get "firewall.$section.src" 2>/dev/null)" = "$src" ] &&
+		[ "$(uci -q get "firewall.$section.dest" 2>/dev/null)" = "$dest" ] &&
+		firewall_section_has_only_options "$section" "src dest"
+}
+
+tailscale_access_rules_match() {
+	local masq="$1"
+	local output section token src dest
+
+	output="$(uci -q show firewall 2>/dev/null)" || return 1
+
+	if [ -z "$ACCESS" ]; then
+		for section in tszone ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts; do
+			printf '%s\n' "$output" | grep -q "^firewall\\.$section=" && return 1
+		done
+		return 0
+	fi
+
+	tailscale_zone_matches "$masq" || return 1
+	for token in ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts; do
+		case "$token" in
+			ts_ac_lan) src=tailscale; dest=lan ;;
+			ts_ac_wan) src=tailscale; dest=wan ;;
+			lan_ac_ts) src=lan; dest=tailscale ;;
+			wan_ac_ts) src=wan; dest=tailscale ;;
+		esac
+		if access_has "$token"; then
+			forwarding_rule_matches "$token" "$src" "$dest" || return 1
+		elif printf '%s\n' "$output" | grep -q "^firewall\\.$token="; then
+			return 1
+		fi
+	done
+}
+
+configure_tailscale_access_rules() {
+	local masq=1 token src dest
+
+	[ "$DISABLE_SNAT_SUBNET_ROUTES" = "1" ] && masq=0
+	tailscale_access_rules_match "$masq" && return 0
+
+	delete_named_firewall_sections tszone ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts || return 1
+	[ -n "$ACCESS" ] || return 0
+
+	uci set firewall.tszone='zone' || return 1
+	uci set firewall.tszone.input='ACCEPT' || return 1
+	uci set firewall.tszone.output='ACCEPT' || return 1
+	uci set firewall.tszone.forward='ACCEPT' || return 1
+	uci set "firewall.tszone.masq=$masq" || return 1
+	uci set firewall.tszone.mtu_fix='1' || return 1
+	uci set firewall.tszone.name='tailscale' || return 1
+	uci add_list firewall.tszone.device='tailscale0' || return 1
+
+	for token in ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts; do
+		access_has "$token" || continue
+		case "$token" in
+			ts_ac_lan) src=tailscale; dest=lan ;;
+			ts_ac_wan) src=tailscale; dest=wan ;;
+			lan_ac_ts) src=lan; dest=tailscale ;;
+			wan_ac_ts) src=wan; dest=tailscale ;;
+		esac
+		uci set "firewall.$token=forwarding" || return 1
+		uci set "firewall.$token.src=$src" || return 1
+		uci set "firewall.$token.dest=$dest" || return 1
+	done
+}
+
+apply_firewall_changes() {
+	local changes pending_dir had_pending=0
+
+	changes="$(uci changes firewall 2>/dev/null)" || return 1
+	[ -e "$FIREWALL_PENDING_STATE_FILE" ] && had_pending=1
+	if [ -n "$changes" ]; then
+		pending_dir="${FIREWALL_PENDING_STATE_FILE%/*}"
+		[ "$pending_dir" = "$FIREWALL_PENDING_STATE_FILE" ] && pending_dir=.
+		mkdir -p "$pending_dir" || return 1
+		: >"$FIREWALL_PENDING_STATE_FILE" || return 1
+		if ! uci commit firewall; then
+			[ "$had_pending" -eq 1 ] || rm -f "$FIREWALL_PENDING_STATE_FILE"
+			return 1
+		fi
+	fi
+
+	[ -e "$FIREWALL_PENDING_STATE_FILE" ] || return 0
+	if "$FIREWALL_INIT" reload || "$FIREWALL_INIT" restart; then
+		rm -f "$FIREWALL_PENDING_STATE_FILE" || return 1
+		return 0
+	fi
+	return 1
 }
 
 save_exit_node_firewall_state() {
@@ -188,17 +385,31 @@ restore_exit_node_firewall_state() {
 
 	rm -f "$EXIT_NODE_FIREWALL_STATE_FILE"
 	if [ "$changed" -eq 1 ] && [ -n "$(uci changes firewall)" ]; then
-		uci commit firewall && { "$FIREWALL_INIT" reload || "$FIREWALL_INIT" restart; }
+		apply_firewall_changes || return 1
 	fi
 }
 
-if [ "${1:-}" = "--cleanup-exit-node-firewall" ]; then
-	restore_exit_node_firewall_state || {
-		log_error "Failed to restore exit-node firewall state."
-		exit 1
-	}
-	exit 0
-fi
+case "${1:-}" in
+	--cleanup-exit-node-firewall)
+		restore_exit_node_firewall_state || {
+			log_error "Failed to restore exit-node firewall state."
+			exit 1
+		}
+		exit 0
+		;;
+	--cleanup-wan-direct-firewall)
+		ALLOW_WAN_DIRECT=0
+		configure_wan_direct_rule || {
+			log_error "Failed to remove Tailscale WAN direct firewall rules."
+			exit 1
+		}
+		apply_firewall_changes || {
+			log_error "Failed to apply Tailscale WAN direct firewall cleanup."
+			exit 1
+		}
+		exit 0
+		;;
+esac
 
 # Execute tailscale up command
 "$TAILSCALE_BIN" up --reset "$@" || revert_exit "tailscale up failed."
@@ -246,65 +457,16 @@ else
 	restore_exit_node_firewall_state || revert_exit "Failed to restore exit-node firewall state."
 fi
 
-# Configure firewall zone and rules
-uci -q delete firewall.tszone
-uci -q delete firewall.ts_ac_lan
-uci -q delete firewall.ts_ac_wan
-uci -q delete firewall.lan_ac_ts
-uci -q delete firewall.wan_ac_ts
 configure_wan_direct_rule || revert_exit "Failed to configure Tailscale WAN direct firewall rule."
-if [ -n "$ACCESS" ]; then
-	tszone_masq=1
-	[ "$DISABLE_SNAT_SUBNET_ROUTES" = "1" ] && tszone_masq=0
-	[ -n "$(uci batch <<-EOF 2>&1
-		set firewall.tszone='zone'
-		set firewall.tszone.input='ACCEPT'
-		set firewall.tszone.output='ACCEPT'
-		set firewall.tszone.forward='ACCEPT'
-		set firewall.tszone.masq='$tszone_masq'
-		set firewall.tszone.mtu_fix='1'
-		set firewall.tszone.name='tailscale'
-		add_list firewall.tszone.device='tailscale0'
-	EOF
-	)" ] && revert_exit "Failed to create firewall zone and forwarding rules for Tailscale."
-fi
-
-# Configure specific firewall forwarding rules between Tailscale, LAN, and WAN
-if [ "${ACCESS//ts_ac_lan/}" != "$ACCESS" ]; then
-	[ -n "$(uci batch <<-EOF 2>&1
-		set firewall.ts_ac_lan=forwarding
-		set firewall.ts_ac_lan.dest='lan'
-		set firewall.ts_ac_lan.src='tailscale'
-	EOF
-	)" ] && revert_exit "Failed to configure ts_ac_lan firewall forwarding rules."
-fi
-if [ "${ACCESS//ts_ac_wan/}" != "$ACCESS" ]; then
-	[ -n "$(uci batch <<-EOF 2>&1
-		set firewall.ts_ac_wan=forwarding
-		set firewall.ts_ac_wan.dest='wan'
-		set firewall.ts_ac_wan.src='tailscale'
-	EOF
-	)" ] && revert_exit "Failed to configure ts_ac_wan firewall forwarding rules."
-fi
-if [ "${ACCESS//lan_ac_ts/}" != "$ACCESS" ]; then
-	[ -n "$(uci batch <<-EOF 2>&1
-		set firewall.lan_ac_ts=forwarding
-		set firewall.lan_ac_ts.dest='tailscale'
-		set firewall.lan_ac_ts.src='lan'
-	EOF
-	)" ] && revert_exit "Failed to configure lan_ac_ts firewall forwarding rules."
-fi
-if [ "${ACCESS//wan_ac_ts/}" != "$ACCESS" ]; then
-	[ -n "$(uci batch <<-EOF 2>&1
-		set firewall.wan_ac_ts=forwarding
-		set firewall.wan_ac_ts.dest='tailscale'
-		set firewall.wan_ac_ts.src='wan'
-	EOF
-	)" ] && revert_exit "Failed to configure wan_ac_ts firewall forwarding rules."
-fi
+configure_tailscale_access_rules || revert_exit "Failed to configure Tailscale firewall zone and forwarding rules."
 
 # Commit configuration changes and reload service
-[ -n "$(uci changes dhcp)" ] && uci commit dhcp && "$DNSMASQ_INIT" reload
-[ -n "$(uci changes network)" ] && uci commit network
-[ -n "$(uci changes firewall)" ] && uci commit firewall && { "$FIREWALL_INIT" reload || "$FIREWALL_INIT" restart; }
+if [ -n "$(uci changes dhcp)" ]; then
+	uci commit dhcp || revert_exit "Failed to commit Tailscale DNS configuration."
+	"$DNSMASQ_INIT" reload || revert_exit "Failed to reload dnsmasq."
+fi
+if [ -n "$(uci changes network)" ]; then
+	uci commit network || revert_exit "Failed to commit Tailscale network cleanup."
+fi
+apply_firewall_changes || revert_exit "Failed to commit or apply Tailscale firewall configuration."
 exit 0

@@ -178,7 +178,32 @@ actual: $disabled_with_managed_profile_output"
 run_stop_instance
 
 helper_output="$(cat "$TMP_DIR/helper.log")"
-[ "$helper_output" = "--cleanup-exit-node-firewall" ] || fail "stop_instance should invoke helper cleanup for exit-node firewall state
+[ "$helper_output" = "--cleanup-exit-node-firewall
+--cleanup-wan-direct-firewall" ] || fail "stop_instance should clean up exit-node and WAN-direct firewall state
 actual: ${helper_output:-<empty>}"
+
+normalized_default="$(
+	. "$INIT_SCRIPT"
+	normalize_tailscale_port ""
+)"
+[ "$normalized_default" = "41641" ] || fail "empty Tailscale port should normalize to 41641"
+
+normalized_invalid="$(
+	. "$INIT_SCRIPT"
+	normalize_tailscale_port "invalid"
+)"
+[ "$normalized_invalid" = "41641" ] || fail "non-numeric Tailscale port should normalize to 41641"
+
+normalized_out_of_range="$(
+	. "$INIT_SCRIPT"
+	normalize_tailscale_port "70000"
+)"
+[ "$normalized_out_of_range" = "41641" ] || fail "out-of-range Tailscale port should normalize to 41641"
+
+normalized_custom="$(
+	. "$INIT_SCRIPT"
+	normalize_tailscale_port "42424"
+)"
+[ "$normalized_custom" = "42424" ] || fail "valid Tailscale port should be preserved"
 
 echo "tailscale init AdGuard lifecycle tests passed"

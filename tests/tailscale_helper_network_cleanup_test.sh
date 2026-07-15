@@ -40,7 +40,7 @@ body="$(cat "$SCRIPT")"
 
 assert_contains "uci -q delete network.tailscale" "$body" "helper should remove the legacy LuCI network interface wrapper"
 assert_contains "add_list firewall.tszone.device='tailscale0'" "$body" "firewall zone should bind directly to tailscale0"
-assert_contains "uci commit firewall && { \"\$FIREWALL_INIT\" reload || \"\$FIREWALL_INIT\" restart; }" "$body" "helper should restart firewall when reload cannot apply committed rules"
+assert_contains "apply_firewall_changes" "$body" "helper should apply committed firewall changes through one checked path"
 
 assert_not_contains "set network.tailscale='interface'" "$body" "helper must not recreate a LuCI network interface for tailscale0"
 assert_not_contains "set network.tailscale.proto" "$body" "helper must not configure a netifd protocol for tailscale0"
@@ -127,7 +127,13 @@ case "$cmd" in
 		value="${1#*=}"
 		set_value "$key" "$value"
 		;;
+	add_list)
+		key="${1%%=*}"
+		value="${1#*=}"
+		set_value "$key" "$value"
+		;;
 	delete)
+		[ "${UCI_FAIL_DELETE_KEY:-}" != "$1" ] || exit 1
 		if has_key "$1"; then
 			delete_value "$1"
 		else
@@ -135,6 +141,7 @@ case "$cmd" in
 		fi
 		;;
 	show)
+		[ "${UCI_FAIL_SHOW_PACKAGE:-}" != "${1:-}" ] || exit 1
 		show_prefix "${1:-}"
 		;;
 	changes)
@@ -147,6 +154,7 @@ case "$cmd" in
 		fi
 		;;
 	commit)
+		[ "${UCI_FAIL_COMMIT_PACKAGE:-}" != "${1:-}" ] || exit 1
 		if [ -n "${1:-}" ]; then
 			tmp="$changes.tmp"
 			awk -v pkg="$1" '$2 !~ "^" pkg "\\." { print }' "$changes" >"$tmp"
@@ -213,6 +221,10 @@ chmod +x "$TMP_DIR/bin/tailscale"
 cat >"$TMP_DIR/firewall-init" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${FIREWALL_LOG:?}"
+case "${1:-}" in
+	reload) [ "${FIREWALL_FAIL_RELOAD:-0}" != "1" ] ;;
+	restart) [ "${FIREWALL_FAIL_RESTART:-0}" != "1" ] ;;
+esac
 SH
 chmod +x "$TMP_DIR/firewall-init"
 
@@ -233,7 +245,8 @@ run_helper() {
 	allow_wan_direct="${2:-0}"
 	tailscale_port="${3:-41641}"
 	wan_direct_zones="${4:-wan}"
-	ACCESS=
+	access="${5:-}"
+	ACCESS="$access"
 	ACCEPT_DNS=0
 	DISABLE_SNAT_SUBNET_ROUTES=0
 	ALLOW_WAN_DIRECT="$allow_wan_direct"
@@ -258,9 +271,11 @@ run_helper() {
 	TAILSCALE_INIT="$TMP_DIR/tailscale-init"
 	DNSMASQ_INIT="$TMP_DIR/dnsmasq-init"
 	TAILSCALE_HELPER_STATE_DIR="$TMP_DIR/state"
+	FIREWALL_PENDING_STATE_FILE="$TMP_DIR/firewall-pending"
 	export ACCESS ACCEPT_DNS DISABLE_SNAT_SUBNET_ROUTES ALLOW_WAN_DIRECT TAILSCALE_PORT WAN_DIRECT_ZONES UCI_DB UCI_CHANGES_LOG UCI_COMMIT_LOG UCI_REVERT_LOG
 	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG PATH
-	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT TAILSCALE_HELPER_STATE_DIR
+	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT TAILSCALE_HELPER_STATE_DIR FIREWALL_PENDING_STATE_FILE
+	export UCI_FAIL_DELETE_KEY UCI_FAIL_SHOW_PACKAGE UCI_FAIL_COMMIT_PACKAGE FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART
 	EXIT_NODE="$exit_node" export EXIT_NODE
 
 	if ! "$SCRIPT"; then
@@ -325,6 +340,10 @@ run_helper "" 1 41641
 wan_direct_count="$(awk -F= '$1 ~ /^firewall\.ts_wan_direct[^.]*$/ { count++ } END { print count + 0 }' "$TMP_DIR/uci_db")"
 [ "$wan_direct_count" = "1" ] || fail "reapplying WAN direct should keep exactly one named firewall rule
 actual: $wan_direct_count"
+[ ! -s "$TMP_DIR/uci_changes.log" ] || fail "reapplying an unchanged WAN direct rule should not create UCI changes
+actual: $(cat "$TMP_DIR/uci_changes.log")"
+[ ! -s "$TMP_DIR/firewall.log" ] || fail "reapplying an unchanged WAN direct rule should not reload firewall
+actual: $(cat "$TMP_DIR/firewall.log")"
 
 : >"$TMP_DIR/uci_changes.log"
 : >"$TMP_DIR/firewall.log"
@@ -353,6 +372,19 @@ run_helper "" 1 41641 "wan wan2"
 wan_direct_count="$(awk -F= '$1 ~ /^firewall\.ts_wan_direct[^.]*$/ { count++ } END { print count + 0 }' "$TMP_DIR/uci_db")"
 [ "$wan_direct_count" = "2" ] || fail "reapplying multi-zone WAN direct should keep exactly two named firewall rules
 actual: $wan_direct_count"
+[ ! -s "$TMP_DIR/uci_changes.log" ] || fail "reapplying unchanged multi-zone WAN direct rules should not create UCI changes
+actual: $(cat "$TMP_DIR/uci_changes.log")"
+[ ! -s "$TMP_DIR/firewall.log" ] || fail "reapplying unchanged multi-zone WAN direct rules should not reload firewall
+actual: $(cat "$TMP_DIR/firewall.log")"
+
+printf '%s\n' 'firewall.ts_wan_direct_1_wan.enabled=0' >>"$TMP_DIR/uci_db"
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 1 41641 "wan wan2"
+if grep -F 'firewall.ts_wan_direct_1_wan.enabled=' "$TMP_DIR/uci_db" >/dev/null; then
+	fail "WAN direct reconciliation should remove stale managed rule options"
+fi
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "removing stale WAN direct options should reload firewall"
 
 : >"$TMP_DIR/uci_changes.log"
 : >"$TMP_DIR/firewall.log"
@@ -360,5 +392,108 @@ run_helper "" 0 41641 "wan wan2"
 if grep -F 'firewall.ts_wan_direct' "$TMP_DIR/uci_db" >/dev/null; then
 	fail "WAN direct disable should remove every named multi-zone firewall rule"
 fi
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 "wan wan2"
+[ ! -s "$TMP_DIR/uci_changes.log" ] || fail "reapplying disabled WAN direct should not create UCI changes
+actual: $(cat "$TMP_DIR/uci_changes.log")"
+[ ! -s "$TMP_DIR/firewall.log" ] || fail "reapplying disabled WAN direct should not reload firewall
+actual: $(cat "$TMP_DIR/firewall.log")"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts"
+assert_contains "firewall.tszone=zone" "$(cat "$TMP_DIR/uci_db")" "ACCESS should create the Tailscale firewall zone"
+assert_contains "firewall.ts_ac_lan=forwarding" "$(cat "$TMP_DIR/uci_db")" "ACCESS should create Tailscale-to-LAN forwarding"
+assert_contains "firewall.lan_ac_ts=forwarding" "$(cat "$TMP_DIR/uci_db")" "ACCESS should create LAN-to-Tailscale forwarding"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts"
+[ ! -s "$TMP_DIR/uci_changes.log" ] || fail "reapplying unchanged ACCESS firewall rules should not create UCI changes
+actual: $(cat "$TMP_DIR/uci_changes.log")"
+[ ! -s "$TMP_DIR/firewall.log" ] || fail "reapplying unchanged ACCESS firewall rules should not reload firewall
+actual: $(cat "$TMP_DIR/firewall.log")"
+
+printf '%s\n' 'firewall.tszone.enabled=0' >>"$TMP_DIR/uci_db"
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts"
+if grep -F 'firewall.tszone.enabled=' "$TMP_DIR/uci_db" >/dev/null; then
+	fail "ACCESS reconciliation should remove stale managed zone options"
+fi
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 1 41641
+UCI_FAIL_DELETE_KEY=firewall.ts_wan_direct_1_wan
+if run_helper "" 0 41641 >/dev/null 2>&1; then
+	fail "WAN direct cleanup should fail when UCI cannot delete a managed rule"
+fi
+unset UCI_FAIL_DELETE_KEY
+run_helper "" 0 41641
+
+UCI_FAIL_SHOW_PACKAGE=firewall
+if run_helper "" 1 41641 >/dev/null 2>&1; then
+	fail "WAN direct reconciliation should fail when UCI cannot enumerate firewall sections"
+fi
+unset UCI_FAIL_SHOW_PACKAGE
+run_helper "" 0 41641
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 1 41641
+: >"$TMP_DIR/tailscale.log"
+: >"$TMP_DIR/firewall.log"
+ALLOW_WAN_DIRECT=0 "$SCRIPT" --cleanup-wan-direct-firewall
+if grep -F 'firewall.ts_wan_direct' "$TMP_DIR/uci_db" >/dev/null; then
+	fail "standalone WAN direct cleanup should remove managed rules"
+fi
+[ ! -s "$TMP_DIR/tailscale.log" ] || fail "standalone WAN direct cleanup must not call tailscale up
+actual: $(cat "$TMP_DIR/tailscale.log")"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+rm -f "$TMP_DIR/firewall-pending"
+FIREWALL_FAIL_RELOAD=1
+FIREWALL_FAIL_RESTART=1
+if run_helper "" 1 41641 >/dev/null 2>&1; then
+	fail "helper should fail when firewall reload and restart both fail"
+fi
+[ -f "$TMP_DIR/firewall-pending" ] || fail "failed firewall apply should leave a pending retry marker"
+unset FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 1 41641
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "a pending firewall apply should retry reload even without new UCI changes"
+[ ! -e "$TMP_DIR/firewall-pending" ] || fail "successful firewall retry should clear the pending marker"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641
+: >"$TMP_DIR/firewall-pending"
+UCI_FAIL_COMMIT_PACKAGE=firewall
+if run_helper "" 1 41641 >/dev/null 2>&1; then
+	fail "helper should fail when a later firewall commit fails with an existing pending marker"
+fi
+[ -f "$TMP_DIR/firewall-pending" ] || fail "a pre-existing pending marker must survive a later UCI commit failure"
+unset UCI_FAIL_COMMIT_PACKAGE
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 1 41641
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "a preserved pending marker should retry firewall apply after commit recovers"
+[ ! -e "$TMP_DIR/firewall-pending" ] || fail "successful retry should clear the preserved pending marker"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641
+UCI_FAIL_COMMIT_PACKAGE=firewall
+if run_helper "" 1 41641 >/dev/null 2>&1; then
+	fail "helper should fail when the firewall UCI commit fails"
+fi
+[ ! -e "$TMP_DIR/firewall-pending" ] || fail "failed UCI commit should not leave an apply-only retry marker"
+unset UCI_FAIL_COMMIT_PACKAGE
 
 echo "tailscale_helper network cleanup tests passed"
