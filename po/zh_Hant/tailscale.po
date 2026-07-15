@@ -161,6 +161,12 @@ msgstr "未探測"
 msgid "Probing..."
 msgstr "探測中..."
 
+msgid "Continuing probe %d/%d"
+msgstr "繼續探測 %d/%d"
+
+msgid "%d probes; direct connection not established"
+msgstr "%d 次探測後仍未建立直連"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:85
 msgid "Probe"
 msgstr "探測"

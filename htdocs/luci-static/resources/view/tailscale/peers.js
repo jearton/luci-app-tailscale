@@ -9,6 +9,9 @@
 'require poll';
 'require view';
 
+var PROBE_MAX_ATTEMPTS = 5;
+var PROBE_RETRY_DELAY_MS = 350;
+
 function formatLastSeen(value) {
 	if (!value)
 		return '-';
@@ -154,6 +157,29 @@ function renderProbeResult(result) {
 		E('strong', {}, label),
 		summary ? ' - ' + summary : ''
 	]);
+}
+
+function appendProbeSummary(result, suffix) {
+	var next = {
+		ok: result && result.ok,
+		path: result && result.path,
+		latency_ms: result && result.latency_ms,
+		relay: result && result.relay,
+		raw: result && result.raw,
+		summary: result && result.summary ? String(result.summary) : ''
+	};
+
+	next.summary = next.summary
+		? next.summary + ' - ' + suffix
+		: suffix;
+
+	return next;
+}
+
+function sleep(ms) {
+	return new Promise(function(resolve) {
+		window.setTimeout(resolve, ms);
+	});
 }
 
 function renderBadge(text) {
@@ -344,9 +370,9 @@ return view.extend({
 						}, probing ? _('Probing...') : _('Probe'));
 						var resultNode = !peer.online
 							? E('span', { style: 'color:#94a3b8' }, _('Offline peers cannot be probed'))
-							: (probing
-							? E('span', { style: 'color:#64748b' }, _('Probing...'))
-							: renderProbeResult(result));
+							: (result ? renderProbeResult(result) : (probing
+								? E('span', { style: 'color:#64748b' }, _('Probing...'))
+								: renderProbeResult(result)));
 
 						rows.push(E('tr', {
 							class: 'tr',
@@ -386,8 +412,18 @@ return view.extend({
 			renderRows(true);
 		}
 
+		async function probeOnce(target) {
+			var res = await fs.exec('/usr/sbin/tailscale_peer_probe', [target]);
+
+			return parseProbeResult(
+				res && res.stdout,
+				res && (res.stderr || res.message || '')
+			);
+		}
+
 		async function probePeer(peer) {
 			var target = peer.probeTarget;
+			var attempt;
 
 			if (!peer.online)
 				return;
@@ -407,11 +443,31 @@ return view.extend({
 			renderRows(true);
 
 			try {
-				var res = await fs.exec('/usr/sbin/tailscale_peer_probe', [target]);
-				state.probeResults[peer.id] = parseProbeResult(
-					res && res.stdout,
-					res && (res.stderr || res.message || '')
-				);
+				for (attempt = 1; attempt <= PROBE_MAX_ATTEMPTS; attempt++) {
+					var result = await probeOnce(target);
+
+					if (result.path === 'derp' && attempt < PROBE_MAX_ATTEMPTS) {
+						state.probeResults[peer.id] = appendProbeSummary(
+							result,
+							_('Continuing probe %d/%d').format(attempt, PROBE_MAX_ATTEMPTS)
+						);
+						renderRows(true);
+						await sleep(PROBE_RETRY_DELAY_MS);
+						continue;
+					}
+
+					if (result.path === 'derp') {
+						state.probeResults[peer.id] = appendProbeSummary(
+							result,
+							_('%d probes; direct connection not established').format(PROBE_MAX_ATTEMPTS)
+						);
+					} else {
+						state.probeResults[peer.id] = result;
+					}
+
+					renderRows(true);
+					break;
+				}
 			} catch (e) {
 				state.probeResults[peer.id] = parseProbeResult('', String((e && (e.message || e.stderr || e.stdout)) || _('Probe failed')));
 			} finally {

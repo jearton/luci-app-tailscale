@@ -48,28 +48,28 @@ mkdir -p "$TMP_DIR"
 cat >"$TMP_DIR/fake-tailscale" <<'SH'
 #!/bin/sh
 	case "$*" in
-		"ping --c=1 --timeout=5s direct-peer")
+		"ping --c=1 --timeout=2s direct-peer")
 			echo "pong from direct-peer (100.64.2.2) via 192.168.188.1:41641 in 12.4ms"
 			exit 0
 			;;
-		"ping --c=1 --timeout=5s control-peer")
+		"ping --c=1 --timeout=2s control-peer")
 			printf 'pong from control-peer (100.64.2.3) via 192.168.188.1:41641 in 15.0ms\n"quoted" line has \\backslash\\ and tab:\t with carriage:\rreturn'
 			exit 0
 			;;
-		"ping --c=1 --timeout=5s derp-peer")
+		"ping --c=1 --timeout=2s derp-peer")
 			echo "pong from derp-peer (100.64.2.1) via DERP(litata) in 41.8ms"
 			exit 0
 			;;
-		"ping --c=1 --timeout=5s derp-no-direct-peer")
+		"ping --c=1 --timeout=2s derp-no-direct-peer")
 			echo "pong from derp-no-direct-peer (100.64.2.6) via DERP(litata) in 67ms"
 			echo "direct connection not established"
 			exit 1
 			;;
-	"ping --c=1 --timeout=5s weird-peer")
+	"ping --c=1 --timeout=2s weird-peer")
 		echo "pong from weird-peer using new format"
 		exit 0
 		;;
-	"ping --c=1 --timeout=5s failed-peer")
+	"ping --c=1 --timeout=2s failed-peer")
 		echo 'ping "100.64.2.6" timed out' >&2
 		echo "no reply" >&2
 		exit 1

@@ -67,6 +67,7 @@ assert_contains "Peer probe" root/usr/sbin/tailscale_peer_probe
 assert_contains "LUCI_DEPENDS:=+tailscale +jshn +curl +jq" Makefile
 assert_contains '"$JQ_BIN" -nc' root/usr/sbin/tailscale_peer_probe
 assert_contains "--argjson ok" root/usr/sbin/tailscale_peer_probe
+assert_contains "ping --c=1 --timeout=2s" root/usr/sbin/tailscale_peer_probe
 assert_not_contains "json_escape()" root/usr/sbin/tailscale_peer_probe
 assert_file root/etc/uci-defaults/40_luci-tailscale
 assert_contains '"admin/vpn/tailscale/peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json
@@ -260,6 +261,18 @@ assert_contains "restoreScrollState" htdocs/luci-static/resources/view/tailscale
 assert_contains "scrollElement.scrollTop" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "renderRows(true)" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_not_contains "disabled: probing," htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "PROBE_MAX_ATTEMPTS = 5" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "PROBE_RETRY_DELAY_MS" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "Continuing probe %d/%d" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "%d probes; direct connection not established" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains 'msgid "Continuing probe %d/%d"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "继续探测 %d/%d"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "%d probes; direct connection not established"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "%d 次探测后仍未建立直连"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Continuing probe %d/%d"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "繼續探測 %d/%d"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "%d probes; direct connection not established"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "%d 次探測後仍未建立直連"' po/zh_Hant/tailscale.po
 assert_contains 'msgid "Offline peers cannot be probed"' po/templates/tailscale.pot
 assert_contains 'msgid "Offline peers cannot be probed"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "离线设备不可探测"' po/zh_Hans/tailscale.po

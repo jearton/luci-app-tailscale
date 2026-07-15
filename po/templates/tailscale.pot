@@ -155,6 +155,12 @@ msgstr ""
 msgid "Probing..."
 msgstr ""
 
+msgid "Continuing probe %d/%d"
+msgstr ""
+
+msgid "%d probes; direct connection not established"
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:85
 msgid "Probe"
 msgstr ""
