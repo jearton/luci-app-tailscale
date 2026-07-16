@@ -74,6 +74,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: luci-app-tailscale
 
       - name: Build package
         uses: openwrt/gh-action-sdk@v9
@@ -90,7 +92,10 @@ jobs:
           {
             echo "## OpenWrt build diagnostics"
             echo
-            log_file="$(find logs -type f -path '*luci-app-tailscale*' 2>/dev/null | sort | tail -n 1)"
+            log_file=""
+            if [[ -d logs ]]; then
+              log_file="$(find logs -type f -path '*luci-app-tailscale*' | sort | tail -n 1)"
+            fi
             if [[ -n "$log_file" ]]; then
               echo "Last 200 lines from \`$log_file\`:"
               echo
