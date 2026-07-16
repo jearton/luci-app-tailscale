@@ -79,7 +79,39 @@ jobs:
         uses: openwrt/gh-action-sdk@v9
         env:
           ARCH: ${{ matrix.sdk_arch }}
+          BUILD_LOG: "1"
           PACKAGES: luci-app-tailscale
+          V: s
+
+      - name: Write build failure summary
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## OpenWrt build diagnostics"
+            echo
+            log_file="$(find logs -type f -path '*luci-app-tailscale*' 2>/dev/null | sort | tail -n 1)"
+            if [[ -n "$log_file" ]]; then
+              echo "Last 200 lines from \`$log_file\`:"
+              echo
+              echo '```text'
+              tail -n 200 "$log_file"
+              echo '```'
+            else
+              echo "The SDK did not produce a luci-app-tailscale build log."
+              echo "The failure occurred before or outside package compilation; inspect the failed Build package step."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-tailscale-${{ matrix.package_format }}-diagnostics
+          path: |
+            logs/**
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Collect package artifacts
         run: |
