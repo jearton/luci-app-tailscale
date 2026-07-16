@@ -9,7 +9,7 @@ PROGK=/usr/sbin/tailscale_keepalive
 PROGA=/usr/sbin/tailscale_adguard_dns_switch
 PROGD=/usr/sbin/tailscaled
 CONFIG_PATH=/var/lib/tailscale
-ADGUARD_DNS_STATE_DIR="${ADGUARD_DNS_STATE_DIR:-/tmp/tailscale_adguard_dns_switch}"
+ADGUARD_DNS_STATE_DIR="${ADGUARD_DNS_STATE_DIR:-/var/run/tailscale_adguard_dns_switch}"
 FIREWALL_PENDING_STATE_FILE="${FIREWALL_PENDING_STATE_FILE:-/var/run/tailscale-firewall-pending}"
 
 service_triggers() {
@@ -240,7 +240,6 @@ stop_instance() {
 	local cfg="$1"
 	local helper_cleanup_failed=0 enabled allow_wan_direct
 
-	tailscale_adguard_dns_apply_down "$cfg"
 	TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH" \
 		FIREWALL_PENDING_STATE_FILE="$FIREWALL_PENDING_STATE_FILE" \
 		"$PROG" --cleanup-exit-node-firewall || helper_cleanup_failed=1
@@ -273,6 +272,11 @@ stop_instance() {
 stop_service() {
 	config_load 'tailscale'
 	config_foreach stop_instance 'tailscale'
+}
+
+service_stopped() {
+	config_load 'tailscale'
+	config_foreach tailscale_adguard_dns_apply_down 'tailscale'
 }
 
 reload_service() {

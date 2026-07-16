@@ -5,6 +5,7 @@
 
 UCI_CMD="${UCI_CMD:-uci}"
 CURL_CMD="${CURL_CMD:-curl}"
+FLOCK_CMD="${FLOCK_CMD:-flock}"
 JQ_CMD="${JQ_CMD:-jq}"
 LOGGER_CMD="${LOGGER_CMD:-logger}"
 NSLOOKUP_CMD="${NSLOOKUP_CMD:-nslookup}"
@@ -15,15 +16,50 @@ SLEEP_CMD="${SLEEP_CMD:-sleep}"
 DATE_CMD="${DATE_CMD:-date}"
 CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-3}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-10}"
-STATE_DIR="${STATE_DIR:-/tmp/tailscale_adguard_dns_switch}"
+STATE_DIR="${STATE_DIR:-/var/run/tailscale_adguard_dns_switch}"
 TAG="tailscale_adguard_dns"
 FAILURE_LOG_INTERVAL=300
+
+umask 077
 
 log_msg() {
 	priority="$1"
 	message="$2"
 
 	"$LOGGER_CMD" -p "$priority" -t "$TAG" "$message"
+}
+
+ensure_state_dir() {
+	if [ -L "$STATE_DIR" ]; then
+		echo "refusing symlink state directory: $STATE_DIR" >&2
+		return 1
+	fi
+
+	if [ -e "$STATE_DIR" ]; then
+		[ -d "$STATE_DIR" ] || return 1
+		owner="$(ls -nd "$STATE_DIR" 2>/dev/null | awk '{print $3}')"
+		[ -n "$owner" ] && [ "$owner" = "$(id -u)" ] || return 1
+	else
+		mkdir -m 0700 "$STATE_DIR" || return 1
+	fi
+
+	chmod 0700 "$STATE_DIR"
+}
+
+state_temp_file() {
+	prefix="$1"
+	ensure_state_dir || return 1
+	mktemp "$STATE_DIR/$prefix.XXXXXX"
+}
+
+write_state_atomic() {
+	destination="$1"
+	temp_file="$(state_temp_file state)" || return 1
+
+	if ! cat >"$temp_file" || ! mv -f "$temp_file" "$destination"; then
+		rm -f "$temp_file"
+		return 1
+	fi
 }
 
 state_key() {
@@ -47,13 +83,31 @@ log_rate_limited() {
 	esac
 
 	if [ -z "$last_seen" ] || [ $((now - last_seen)) -ge "$FAILURE_LOG_INTERVAL" ]; then
-		mkdir -p "$STATE_DIR" || return 1
+		ensure_state_dir || return 1
 		log_msg "$priority" "$message"
-		printf '%s\n' "$now" >"$last_file"
+		printf '%s\n' "$now" | write_state_atomic "$last_file"
 	fi
 }
 
+candidate_mode() {
+	[ "${TAILSCALE_ADGUARD_PREFLIGHT_CANDIDATE:-0}" = "1" ]
+}
+
 uci_get() {
+	if candidate_mode; then
+		case "$1" in
+			adguard_api_url) printf '%s\n' "${TAILSCALE_ADGUARD_PREFLIGHT_API_URL:-}"; return 0 ;;
+			adguard_username) printf '%s\n' "${TAILSCALE_ADGUARD_PREFLIGHT_USERNAME:-}"; return 0 ;;
+			adguard_password)
+				if [ "${TAILSCALE_ADGUARD_PREFLIGHT_PASSWORD_SET:-0}" = "1" ]; then
+					printf '%s\n' "${TAILSCALE_ADGUARD_PREFLIGHT_PASSWORD:-}"
+					return 0
+				fi
+				;;
+			adguard_health_domain) printf '%s\n' "${TAILSCALE_ADGUARD_PREFLIGHT_HEALTH_DOMAIN:-}"; return 0 ;;
+		esac
+	fi
+
 	"$UCI_CMD" -q get "tailscale.settings.$1" 2>/dev/null || true
 }
 
@@ -63,6 +117,18 @@ uci_get_raw() {
 
 uci_list() {
 	option="$1"
+	if candidate_mode; then
+		case "$option" in
+			adguard_default_upstreams) value="${TAILSCALE_ADGUARD_PREFLIGHT_DEFAULT_UPSTREAMS:-}" ;;
+			adguard_tailnet_upstreams) value="${TAILSCALE_ADGUARD_PREFLIGHT_TAILNET_UPSTREAMS:-}" ;;
+			adguard_health_expected_ips) value="${TAILSCALE_ADGUARD_PREFLIGHT_EXPECTED_IPS:-}" ;;
+			*) value=__tailscale_no_candidate_value__ ;;
+		esac
+		if [ "$value" != "__tailscale_no_candidate_value__" ]; then
+			printf '%s\n' "$value" | sed '/^$/d'
+			return 0
+		fi
+	fi
 
 	"$UCI_CMD" -q get "tailscale.settings.$option" 2>/dev/null | tr ' ' '\n' | sed '/^$/d'
 }
@@ -168,38 +234,56 @@ api_url() {
 	fi
 }
 
-curl_get() {
-	endpoint="$1"
-	base="$(api_url)"
+curl_config_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+run_curl() (
 	user="$(uci_get adguard_username)"
 	pass="$(uci_get adguard_password)"
 
 	if [ -n "$user" ]; then
-		"$CURL_CMD" -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" -u "$user:$pass" "$base$endpoint"
+		auth_file="$(state_temp_file curl-auth)" || exit 1
+		cleanup_curl_auth() {
+			rm -f "$auth_file"
+		}
+		trap cleanup_curl_auth 0 1 2 15
+		escaped_user="$(curl_config_escape "$user")" || exit 1
+		escaped_pass="$(curl_config_escape "$pass")" || exit 1
+		printf 'user = "%s:%s"\n' "$escaped_user" "$escaped_pass" >"$auth_file" || exit 1
+		chmod 0600 "$auth_file" || exit 1
+		"$CURL_CMD" --config "$auth_file" "$@"
 	else
-		"$CURL_CMD" -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" "$base$endpoint"
+		"$CURL_CMD" "$@"
 	fi
+)
+
+curl_get() {
+	endpoint="$1"
+	base="$(api_url)"
+	run_curl -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" "$base$endpoint"
 }
 
 curl_post_json() {
 	endpoint="$1"
 	body_file="$2"
 	base="$(api_url)"
-	user="$(uci_get adguard_username)"
-	pass="$(uci_get adguard_password)"
-
-	if [ -n "$user" ]; then
-		"$CURL_CMD" -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" -u "$user:$pass" -H "Content-Type: application/json" -X POST --data-binary "@$body_file" "$base$endpoint"
-	else
-		"$CURL_CMD" -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" -H "Content-Type: application/json" -X POST --data-binary "@$body_file" "$base$endpoint"
-	fi
+	run_curl -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" -H "Content-Type: application/json" -X POST --data-binary "@$body_file" "$base$endpoint"
 }
 
-check_adguard_api() {
-	mkdir -p "$STATE_DIR"
-	api_check_body="$STATE_DIR/preflight_test_upstream_dns.json"
-	api_check_response="$STATE_DIR/preflight_test_upstream_dns_response.json"
-	api_check_upstreams="$STATE_DIR/preflight_default_upstreams.txt"
+check_adguard_api() (
+	api_check_body=
+	api_check_response=
+	api_check_upstreams=
+	cleanup_preflight_files() {
+		for cleanup_file in "$api_check_body" "$api_check_response" "$api_check_upstreams"; do
+			[ -z "$cleanup_file" ] || rm -f "$cleanup_file"
+		done
+	}
+	trap cleanup_preflight_files 0 1 2 15
+	api_check_body="$(state_temp_file preflight-body)" || exit 1
+	api_check_response="$(state_temp_file preflight-response)" || exit 1
+	api_check_upstreams="$(state_temp_file preflight-upstreams)" || exit 1
 
 	curl_get "/control/status" >/dev/null || return 1
 	profile_lines down >"$api_check_upstreams" || return 1
@@ -217,7 +301,7 @@ check_adguard_api() {
 	"$JQ_CMD" -e '
 		type == "object" and length > 0 and all(.[]; . == "OK")
 	' "$api_check_response" >/dev/null || return 1
-}
+)
 
 json_replace_upstreams() {
 	dns_info="$1"
@@ -253,21 +337,20 @@ validate_profile_file() {
 	fi
 }
 
-apply_profile() {
+apply_profile_locked() (
 	profile="$1"
-
-	case "$profile" in
-		up|down) ;;
-		*)
-			echo "unknown profile: $profile" >&2
-			return 2
-			;;
-	esac
-
-	mkdir -p "$STATE_DIR"
-	dns_info="$STATE_DIR/dns_info.json"
-	body="$STATE_DIR/dns_config.json"
-	upstreams="$STATE_DIR/upstreams.txt"
+	dns_info=
+	body=
+	upstreams=
+	cleanup_profile_files() {
+		for cleanup_file in "$dns_info" "$body" "$upstreams"; do
+			[ -z "$cleanup_file" ] || rm -f "$cleanup_file"
+		done
+	}
+	trap cleanup_profile_files 0 1 2 15
+	dns_info="$(state_temp_file dns-info)" || exit 1
+	body="$(state_temp_file dns-config)" || exit 1
+	upstreams="$(state_temp_file upstreams)" || exit 1
 
 	profile_lines "$profile" >"$upstreams" || {
 		log_rate_limited daemon.err "profile_generate_$profile" "failed to generate AdGuard DNS $profile profile"
@@ -293,8 +376,25 @@ apply_profile() {
 	curl_post_json "/control/cache_clear" /dev/null >/dev/null 2>&1 || \
 		log_rate_limited daemon.warn "profile_cache_clear_$profile" "AdGuard cache clear failed after $profile profile switch"
 
-	printf '%s\n' "$profile" >"$STATE_DIR/current_profile"
+	printf '%s\n' "$profile" | write_state_atomic "$STATE_DIR/current_profile" || return 1
 	log_msg daemon.info "applied AdGuard DNS $profile profile"
+)
+
+apply_profile() {
+	profile="$1"
+
+	case "$profile" in
+		up|down) ;;
+		*)
+			echo "unknown profile: $profile" >&2
+			return 2
+			;;
+	esac
+
+	ensure_state_dir || return 1
+	exec 9>"$STATE_DIR/profile.lock" || return 1
+	"$FLOCK_CMD" -x 9 || return 1
+	apply_profile_locked "$profile"
 }
 
 lan_ip() {
@@ -403,7 +503,7 @@ run_loop() {
 	valid_positive_number "$success_threshold" || success_threshold=2
 	valid_positive_number "$failure_threshold" || failure_threshold=2
 
-	mkdir -p "$STATE_DIR"
+	ensure_state_dir || return 1
 	success_count=0
 	failure_count=0
 

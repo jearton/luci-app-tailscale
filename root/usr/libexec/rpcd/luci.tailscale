@@ -1,0 +1,103 @@
+#!/bin/sh
+
+# Copyright (C) 2026 jearton
+# SPDX-License-Identifier: GPL-3.0-only
+
+PRECHECK_BIN="${PRECHECK_BIN:-/usr/sbin/tailscale_adguard_dns_switch}"
+JQ_BIN="${JQ_BIN:-jq}"
+
+print_methods() {
+	printf '%s\n' '{"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""}}'
+}
+
+fail_json() {
+	message="$1"
+	"$JQ_BIN" -nc --arg error "$message" '{code: 2, ready: "fail", error: $error}'
+	exit 1
+}
+
+parse_request() {
+	request="$(cat)"
+	printf '%s' "$request" | "$JQ_BIN" -e '
+		type == "object" and
+		(.candidate | type == "string") and
+		(.api_url | type == "string") and
+		(.username | type == "string") and
+		(.password_set | type == "string") and
+		(.password | type == "string") and
+		(.default_upstreams | type == "string") and
+		(.tailnet_upstreams | type == "string") and
+		(.health_domain | type == "string") and
+		(.expected_ips | type == "string")
+	' >/dev/null 2>&1 || fail_json "invalid request"
+
+	candidate="$(printf '%s' "$request" | "$JQ_BIN" -r '.candidate')"
+	api_url="$(printf '%s' "$request" | "$JQ_BIN" -r '.api_url')"
+	username="$(printf '%s' "$request" | "$JQ_BIN" -r '.username')"
+	password_set="$(printf '%s' "$request" | "$JQ_BIN" -r '.password_set')"
+	password="$(printf '%s' "$request" | "$JQ_BIN" -r '.password')"
+	default_upstreams="$(printf '%s' "$request" | "$JQ_BIN" -r '.default_upstreams')"
+	tailnet_upstreams="$(printf '%s' "$request" | "$JQ_BIN" -r '.tailnet_upstreams')"
+	health_domain="$(printf '%s' "$request" | "$JQ_BIN" -r '.health_domain')"
+	expected_ips="$(printf '%s' "$request" | "$JQ_BIN" -r '.expected_ips')"
+
+	case "$candidate" in
+		0|1) ;;
+		*) fail_json "invalid candidate mode" ;;
+	esac
+
+	case "$password_set" in
+		0|1) ;;
+		*) fail_json "invalid password mode" ;;
+	esac
+}
+
+run_preflight() {
+	if [ "$candidate" = "1" ]; then
+		if output="$(
+			TAILSCALE_ADGUARD_PREFLIGHT_CANDIDATE=1 \
+			TAILSCALE_ADGUARD_PREFLIGHT_API_URL="$api_url" \
+			TAILSCALE_ADGUARD_PREFLIGHT_USERNAME="$username" \
+			TAILSCALE_ADGUARD_PREFLIGHT_PASSWORD_SET="$password_set" \
+			TAILSCALE_ADGUARD_PREFLIGHT_PASSWORD="$password" \
+			TAILSCALE_ADGUARD_PREFLIGHT_DEFAULT_UPSTREAMS="$default_upstreams" \
+			TAILSCALE_ADGUARD_PREFLIGHT_TAILNET_UPSTREAMS="$tailnet_upstreams" \
+			TAILSCALE_ADGUARD_PREFLIGHT_HEALTH_DOMAIN="$health_domain" \
+			TAILSCALE_ADGUARD_PREFLIGHT_EXPECTED_IPS="$expected_ips" \
+			"$PRECHECK_BIN" --preflight
+		)"; then
+			code=0
+		else
+			code=$?
+		fi
+	else
+		if output="$("$PRECHECK_BIN" --preflight)"; then
+			code=0
+		else
+			code=$?
+		fi
+	fi
+
+	printf '%s\n' "$output" | "$JQ_BIN" -Rn --argjson code "$code" '
+		reduce inputs as $line ({code: $code};
+			($line | index("=")) as $separator |
+			if $separator == null then .
+			else . + {($line[0:$separator]): $line[$separator + 1:]}
+			end
+		)
+	'
+}
+
+case "${1:-}" in
+	list)
+		print_methods
+		;;
+	call)
+		[ "${2:-}" = "adguard_preflight" ] || exit 1
+		parse_request
+		run_preflight
+		;;
+	*)
+		exit 1
+		;;
+esac

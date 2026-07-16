@@ -115,6 +115,15 @@ SH
 	cat >"$TMP_DIR/curl" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${CURL_LOG:?}"
+read_config=0
+for arg in "$@"; do
+	if [ "$read_config" = "1" ]; then
+		cat "$arg" >>"${CURL_AUTH_LOG:?}"
+		read_config=0
+	elif [ "$arg" = "--config" ]; then
+		read_config=1
+	fi
+done
 case "$*" in
 	*"/control/status"*) echo '{"running":true,"dns_port":53}' ;;
 	*"/control/dns_info"*)
@@ -161,6 +170,13 @@ JSON
 esac
 SH
 	chmod +x "$TMP_DIR/curl"
+
+	cat >"$TMP_DIR/flock" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${FLOCK_LOG:?}"
+[ "${FLOCK_FAIL:-0}" = "0" ]
+SH
+	chmod +x "$TMP_DIR/flock"
 
 	cat >"$TMP_DIR/logger" <<'SH'
 #!/bin/sh
@@ -221,6 +237,8 @@ SH
 
 prepare_api_json() {
 	CURL_LOG="$TMP_DIR/curl.log"
+	CURL_AUTH_LOG="$TMP_DIR/curl-auth.log"
+	FLOCK_LOG="$TMP_DIR/flock.log"
 	LOGGER_LOG="$TMP_DIR/logger.log"
 	DNS_INFO_JSON="$TMP_DIR/dns-info.json"
 	POSTED_JSON="$TMP_DIR/posted.json"
@@ -231,7 +249,9 @@ prepare_api_json() {
 	SLEEP_COUNT_FILE="$TMP_DIR/sleep.count"
 	REAL_JQ="${REAL_JQ:-$(command -v jq)}"
 	STATE_DIR="$TMP_DIR/state"
-	export CURL_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG NSLOOKUP_LOG SLEEP_LOG SLEEP_COUNT_FILE REAL_JQ STATE_DIR
+	export CURL_LOG CURL_AUTH_LOG FLOCK_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG NSLOOKUP_LOG SLEEP_LOG SLEEP_COUNT_FILE REAL_JQ STATE_DIR
+	: >"$CURL_AUTH_LOG"
+	: >"$FLOCK_LOG"
 	printf '0\n' >"$SLEEP_COUNT_FILE"
 
 	cat >"$DNS_INFO_JSON" <<'JSON'
@@ -242,6 +262,7 @@ JSON
 run_script() {
 	UCI_CMD="$TMP_DIR/uci" \
 	CURL_CMD="$TMP_DIR/curl" \
+	FLOCK_CMD="$TMP_DIR/flock" \
 	LOGGER_CMD="$TMP_DIR/logger" \
 	NSLOOKUP_CMD="$TMP_DIR/nslookup" \
 	PGREP_CMD="$TMP_DIR/pgrep" \
@@ -250,6 +271,34 @@ run_script() {
 	JQ_CMD="$TMP_DIR/jq" \
 	SLEEP_CMD="$TMP_DIR/sleep" \
 	"$SCRIPT" "$@"
+}
+
+test_preflight_uses_candidate_configuration() {
+	: >"$CURL_LOG"
+	: >"$CURL_AUTH_LOG"
+	: >"$NSLOOKUP_LOG"
+
+	out="$(
+		TAILSCALE_ADGUARD_PREFLIGHT_CANDIDATE=1 \
+		TAILSCALE_ADGUARD_PREFLIGHT_API_URL='http://candidate.example:3000' \
+		TAILSCALE_ADGUARD_PREFLIGHT_USERNAME='candidate-user' \
+		TAILSCALE_ADGUARD_PREFLIGHT_PASSWORD_SET=1 \
+		TAILSCALE_ADGUARD_PREFLIGHT_PASSWORD='candidate-secret' \
+		TAILSCALE_ADGUARD_PREFLIGHT_DEFAULT_UPSTREAMS="$(printf '1.1.1.1\n8.8.8.8')" \
+		TAILSCALE_ADGUARD_PREFLIGHT_TAILNET_UPSTREAMS='[/candidate.example/]100.100.100.100' \
+		TAILSCALE_ADGUARD_PREFLIGHT_HEALTH_DOMAIN='candidate-health.example' \
+		TAILSCALE_ADGUARD_PREFLIGHT_EXPECTED_IPS='10.23.0.15' \
+		run_script --preflight
+	)"
+
+	assert_contains 'ready=pass' "$out" "candidate configuration should pass preflight"
+	assert_eq '{"upstream_dns":["1.1.1.1","8.8.8.8"]}' "$(cat "$TEST_UPSTREAM_JSON")" "preflight API payload must use candidate upstreams instead of persisted UCI"
+	assert_contains 'candidate-health.example 100.100.100.100' "$(cat "$NSLOOKUP_LOG")" "health check must use the candidate domain"
+	assert_contains 'http://candidate.example:3000/control/status' "$(cat "$CURL_LOG")" "AdGuard API checks must use the candidate URL"
+	assert_contains 'user = "candidate-user:candidate-secret"' "$(cat "$CURL_AUTH_LOG")" "curl must receive candidate credentials through a protected config"
+	if grep -F -- 'candidate-secret' "$CURL_LOG" >/dev/null || grep -F -- '-u ' "$CURL_LOG" >/dev/null; then
+		fail "AdGuard credentials must not appear in curl argv"
+	fi
 }
 
 test_profile_generation() {
@@ -322,6 +371,7 @@ test_preflight_does_not_require_accept_dns() {
 }
 
 test_apply_profile_preserves_dns_info() {
+	: >"$FLOCK_LOG"
 	run_script --apply-profile up
 
 	posted="$(cat "$POSTED_JSON")"
@@ -332,6 +382,32 @@ test_apply_profile_preserves_dns_info() {
 	assert_contains "--connect-timeout 3" "$(cat "$CURL_LOG")" "curl calls should include a connect timeout"
 	assert_contains "--max-time 10" "$(cat "$CURL_LOG")" "curl calls should include a max time"
 	assert_contains "/control/cache_clear" "$(cat "$CURL_LOG")" "profile application should always clear AdGuard cache after switching"
+	assert_contains "-x 9" "$(cat "$FLOCK_LOG")" "profile application must acquire an exclusive lock"
+}
+
+test_apply_profile_fails_when_lock_is_unavailable() {
+	: >"$CURL_LOG"
+	if FLOCK_FAIL=1 run_script --apply-profile up >/dev/null 2>&1; then
+		fail "profile application must fail when the exclusive lock cannot be acquired"
+	fi
+	if grep -F '/control/dns_info' "$CURL_LOG" >/dev/null; then
+		fail "profile application must not touch AdGuard before acquiring the lock"
+	fi
+}
+
+test_symlink_state_directory_is_rejected() {
+	evil_dir="$TMP_DIR/evil-state-target"
+	rm -rf "$STATE_DIR" "$evil_dir"
+	mkdir -p "$evil_dir"
+	ln -s "$evil_dir" "$STATE_DIR"
+
+	if run_script --apply-profile up >/dev/null 2>&1; then
+		fail "a symlink state directory must be rejected"
+	fi
+	[ -z "$(find "$evil_dir" -mindepth 1 -print -quit)" ] || fail "a rejected symlink state directory must not receive root-written files"
+
+	rm -f "$STATE_DIR"
+	mkdir -p "$STATE_DIR"
 }
 
 test_empty_profile_does_not_write_dns_config() {
@@ -431,7 +507,10 @@ test_preflight_requires_api_post_test
 test_preflight_rejects_upstream_error_response
 test_preflight_requires_configured_default_upstream
 test_preflight_does_not_require_accept_dns
+test_preflight_uses_candidate_configuration
 test_apply_profile_preserves_dns_info
+test_apply_profile_fails_when_lock_is_unavailable
+test_symlink_state_directory_is_rejected
 test_empty_profile_does_not_write_dns_config
 test_run_loop_applies_down_profile_when_initial_health_fails
 test_run_loop_runs_static_preflight_once_before_health_polling

@@ -182,6 +182,45 @@ run_stop_instance() {
 	)
 }
 
+run_service_stopped() {
+	FAKE_ADGUARD_LOG="$TMP_DIR/service-stopped-adguard.log"
+	ADGUARD_DNS_STATE_DIR="$TMP_DIR/service-stopped-state"
+	: >"$FAKE_ADGUARD_LOG"
+	rm -rf "$ADGUARD_DNS_STATE_DIR"
+	mkdir -p "$ADGUARD_DNS_STATE_DIR"
+	printf 'up\n' >"$ADGUARD_DNS_STATE_DIR/current_profile"
+	export FAKE_ADGUARD_LOG ADGUARD_DNS_STATE_DIR
+
+	(
+		. "$INIT_SCRIPT"
+		PROGA="$TMP_DIR/fake-adguard"
+		ADGUARD_DNS_STATE_DIR="$ADGUARD_DNS_STATE_DIR"
+
+		config_load() { :; }
+		config_foreach() {
+			callback="$1"
+			"$callback" settings
+		}
+		config_get_bool() {
+			case "$3" in
+				adguard_dns_switch_enabled) eval "$1=0" ;;
+				*) eval "$1=${4:-0}" ;;
+			esac
+		}
+		config_get() {
+			case "$3" in
+				adguard_default_upstreams) eval "$1=9.9.9.9" ;;
+				*) eval "$1=" ;;
+			esac
+		}
+
+		command -v service_stopped >/dev/null 2>&1 || fail "init script must define service_stopped"
+		service_stopped
+	)
+
+	cat "$FAKE_ADGUARD_LOG"
+}
+
 cat >"$TMP_DIR/fake-tailscaled" <<'SH'
 #!/bin/sh
 [ "${1:-}" = "--cleanup" ] || exit 1
@@ -206,6 +245,13 @@ disabled_helper_output="$(run_disabled_start)"
 actual: ${disabled_helper_output:-<empty>}"
 
 run_stop_instance
+
+[ ! -s "$FAKE_ADGUARD_LOG" ] || fail "stop_instance must not switch AdGuard before procd terminates the watcher
+actual: $(cat "$FAKE_ADGUARD_LOG")"
+
+service_stopped_output="$(run_service_stopped)"
+[ "$service_stopped_output" = "--apply-profile down" ] || fail "service_stopped should apply the down profile after procd terminates the watcher
+actual: ${service_stopped_output:-<empty>}"
 
 helper_output="$(cat "$TMP_DIR/helper.log")"
 [ "$helper_output" = "--cleanup-exit-node-firewall

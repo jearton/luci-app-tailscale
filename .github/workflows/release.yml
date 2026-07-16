@@ -39,7 +39,7 @@ jobs:
       - name: Check shell and JavaScript syntax
         run: |
           set -eu
-          for file in root/etc/init.d/tailscale root/etc/hotplug.d/iface/* root/etc/uci-defaults/* root/usr/sbin/tailscale_* tests/*_test.sh; do
+          for file in root/etc/init.d/tailscale root/etc/hotplug.d/iface/* root/etc/uci-defaults/* root/usr/libexec/rpcd/* root/usr/sbin/tailscale_* tests/*_test.sh; do
             sh -n "$file"
           done
           for file in htdocs/luci-static/resources/view/tailscale/*.js tests/*_test.js; do

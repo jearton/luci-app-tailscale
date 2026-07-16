@@ -19,6 +19,24 @@ const callServiceList = rpc.declare({
 	expect: { '': {} }
 });
 
+const callAdguardPreflight = rpc.declare({
+	object: 'luci.tailscale',
+	method: 'adguard_preflight',
+	params: [
+		'candidate',
+		'api_url',
+		'username',
+		'password_set',
+		'password',
+		'default_upstreams',
+		'tailnet_upstreams',
+		'health_domain',
+		'expected_ips'
+	],
+	expect: { '': {} },
+	reject: true
+});
+
 const ADGUARD_PREFLIGHT_CHECKS = [
 	{ key: 'adguard_process', label: _('AdGuard process') },
 	{ key: 'port_53_adguard', label: _('Port 53 is AdGuard') },
@@ -143,16 +161,6 @@ function toList(value) {
 	return String(value).trim().split(/\s+/).filter(Boolean);
 }
 
-function parseKeyValues(stdout) {
-	const out = {};
-	String(stdout || '').split(/\n/).forEach(function(line) {
-		const idx = line.indexOf('=');
-		if (idx > 0)
-			out[line.slice(0, idx)] = line.slice(idx + 1);
-	});
-	return out;
-}
-
 function renderCheck(value) {
 	if (value !== 'pass' && value !== 'fail')
 		return E('span', { style: 'color:#687586' }, _('Checking ...'));
@@ -165,27 +173,59 @@ function adguardPreflightCellId(key) {
 	return 'adguard_preflight_' + key;
 }
 
-function normalizeAdguardPreflightResult(res) {
-	return parseKeyValues(res && res.stdout);
+function buildAdguardPreflightRequest(values) {
+	return {
+		candidate: '1',
+		api_url: String(values.apiUrl || ''),
+		username: String(values.username || ''),
+		password_set: values.keepPassword ? '0' : '1',
+		password: values.keepPassword ? '' : String(values.password || ''),
+		default_upstreams: toList(values.defaultUpstreams).join('\n'),
+		tailnet_upstreams: toList(values.tailnetUpstreams).join('\n'),
+		health_domain: String(values.healthDomain || ''),
+		expected_ips: toList(values.expectedIps).join('\n')
+	};
 }
 
-async function fetchAdguardPreflightStatus() {
+async function fetchAdguardPreflightStatus(request) {
+	const input = request || {
+		candidate: '0',
+		api_url: '',
+		username: '',
+		password_set: '0',
+		password: '',
+		default_upstreams: '',
+		tailnet_upstreams: '',
+		health_domain: '',
+		expected_ips: ''
+	};
+
 	try {
-		return normalizeAdguardPreflightResult(await fs.exec("/usr/sbin/tailscale_adguard_dns_switch", ["--preflight"]));
+		return await callAdguardPreflight(
+			input.candidate,
+			input.api_url,
+			input.username,
+			input.password_set,
+			input.password,
+			input.default_upstreams,
+			input.tailnet_upstreams,
+			input.health_domain,
+			input.expected_ips
+		);
 	} catch (e) {
-		let stdout = e && e.stdout ? e.stdout : '';
 		const error = e && (e.message || e.stderr || e) || 'preflight command failed';
-		if (stdout && stdout.charAt(stdout.length - 1) !== '\n')
-			stdout += '\n';
-		return parseKeyValues(stdout + 'ready=fail\nerror=' + String(error).replace(/\n/g, ' ') + '\n');
+		return {
+			ready: 'fail',
+			error: String(error).replace(/\n/g, ' ')
+		};
 	}
 }
 
-async function writeAdguardDnsSwitchEnabled(section_id, value) {
+async function writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest) {
 	const persistedEnabled = uci.get('tailscale', section_id, 'adguard_dns_switch_enabled') === '1';
 
 	if (value === '1' && !persistedEnabled) {
-		const status = await fetchAdguardPreflightStatus();
+		const status = await fetchAdguardPreflightStatus(candidateRequest);
 		if (status.ready !== 'pass')
 			throw new Error(_('Only enable when all status checks pass.'));
 	}
@@ -551,7 +591,19 @@ return view.extend({
 		o.default = o.disabled;
 		o.rmempty = false;
 		o.write = function(section_id, value) {
-			return writeAdguardDnsSwitchEnabled(section_id, value);
+			const password = String(adguardPasswordOption.formvalue(section_id) || '').trim();
+			const candidateRequest = buildAdguardPreflightRequest({
+				apiUrl: String(adguardApiUrlOption.formvalue(section_id) || '').trim(),
+				username: String(adguardUsernameOption.formvalue(section_id) || '').trim(),
+				password: password,
+				keepPassword: !password && hasAdguardPassword,
+				defaultUpstreams: adguardDefaultUpstreamsOption.formvalue(section_id),
+				tailnetUpstreams: adguardTailnetUpstreamsOption.formvalue(section_id),
+				healthDomain: String(adguardHealthDomainOption.formvalue(section_id) || '').trim(),
+				expectedIps: adguardHealthExpectedIpsOption.formvalue(section_id)
+			});
+
+			return writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest);
 		};
 		o.validate = function(section_id, value) {
 			if (value !== '1')
