@@ -189,7 +189,7 @@ start_instance() {
 	if ! section_enabled "$cfg"; then
 		TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH" \
 			FIREWALL_PENDING_STATE_FILE="$FIREWALL_PENDING_STATE_FILE" \
-			"$PROG" --cleanup-wan-direct-firewall || logger -p daemon.err -t tailscale "failed to remove WAN direct firewall rules for disabled service"
+			"$PROG" --cleanup-managed-firewall || logger -p daemon.err -t tailscale "failed to remove managed firewall state for disabled service"
 		echo "disabled in /etc/config/tailscale"
 		return 1
 	fi
@@ -264,8 +264,8 @@ stop_instance() {
 
 	"$PROGD" --cleanup
 
-	# Remove existing link or folder
-	rm -rf "$CONFIG_PATH"
+	# Keep helper recovery state available when firewall cleanup needs a retry.
+	[ "$helper_cleanup_failed" -ne 0 ] || rm -rf "$CONFIG_PATH"
 
 	[ "$helper_cleanup_failed" -eq 0 ]
 }

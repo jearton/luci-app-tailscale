@@ -17,12 +17,40 @@ CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-3}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-10}"
 STATE_DIR="${STATE_DIR:-/tmp/tailscale_adguard_dns_switch}"
 TAG="tailscale_adguard_dns"
+FAILURE_LOG_INTERVAL=300
 
 log_msg() {
 	priority="$1"
 	message="$2"
 
 	"$LOGGER_CMD" -p "$priority" -t "$TAG" "$message"
+}
+
+state_key() {
+	printf '%s' "$1" | sed 's/[^A-Za-z0-9_.-]/_/g'
+}
+
+log_rate_limited() {
+	priority="$1"
+	key="$(state_key "$2")"
+	message="$3"
+	last_file="$STATE_DIR/$key.last_error"
+	last_seen=
+	now="$($DATE_CMD +%s 2>/dev/null || true)"
+
+	case "$now" in
+		''|*[!0-9]*) now=0 ;;
+	esac
+	[ -r "$last_file" ] && last_seen="$(cat "$last_file" 2>/dev/null || true)"
+	case "$last_seen" in
+		''|*[!0-9]*) last_seen= ;;
+	esac
+
+	if [ -z "$last_seen" ] || [ $((now - last_seen)) -ge "$FAILURE_LOG_INTERVAL" ]; then
+		mkdir -p "$STATE_DIR" || return 1
+		log_msg "$priority" "$message"
+		printf '%s\n' "$now" >"$last_file"
+	fi
 }
 
 uci_get() {
@@ -170,9 +198,20 @@ curl_post_json() {
 check_adguard_api() {
 	mkdir -p "$STATE_DIR"
 	api_check_body="$STATE_DIR/preflight_test_upstream_dns.json"
+	api_check_upstreams="$STATE_DIR/preflight_default_upstreams.txt"
 
 	curl_get "/control/status" >/dev/null || return 1
-	printf '%s\n' '{"upstream_dns":["223.5.5.5"]}' >"$api_check_body"
+	profile_lines down >"$api_check_upstreams" || return 1
+	if profile_is_empty "$api_check_upstreams"; then
+		log_rate_limited daemon.err api_default_upstreams_empty "AdGuard API preflight requires at least one valid default upstream"
+		return 1
+	fi
+	"$JQ_CMD" -nc --rawfile upstreams "$api_check_upstreams" '
+		{upstream_dns: ($upstreams | split("\n") | map(select(length > 0)))}
+	' >"$api_check_body" || {
+		log_rate_limited daemon.err api_preflight_payload "failed to build AdGuard API preflight payload"
+		return 1
+	}
 	curl_post_json "/control/test_upstream_dns" "$api_check_body" >/dev/null || return 1
 }
 
@@ -194,17 +233,17 @@ validate_profile_file() {
 	upstream_file="$2"
 
 	if profile_is_empty "$upstream_file"; then
-		log_msg daemon.err "generated AdGuard DNS $profile profile is empty"
+		log_rate_limited daemon.err "profile_empty_$profile" "generated AdGuard DNS $profile profile is empty"
 		return 1
 	fi
 
 	if [ "$profile" = "up" ]; then
 		[ -n "$(tailnet_upstreams)" ] || {
-			log_msg daemon.err "AdGuard DNS up profile requires tailnet upstreams"
+			log_rate_limited daemon.err profile_tailnet_upstreams_empty "AdGuard DNS up profile requires tailnet upstreams"
 			return 1
 		}
 		[ -n "$(health_domain)" ] && [ -n "$(expected_ips)" ] || {
-			log_msg daemon.err "AdGuard DNS up profile requires health settings"
+			log_rate_limited daemon.err profile_health_settings_empty "AdGuard DNS up profile requires health settings"
 			return 1
 		}
 	fi
@@ -226,26 +265,29 @@ apply_profile() {
 	body="$STATE_DIR/dns_config.json"
 	upstreams="$STATE_DIR/upstreams.txt"
 
-	profile_lines "$profile" >"$upstreams"
+	profile_lines "$profile" >"$upstreams" || {
+		log_rate_limited daemon.err "profile_generate_$profile" "failed to generate AdGuard DNS $profile profile"
+		return 1
+	}
 	validate_profile_file "$profile" "$upstreams" || return 1
 
 	curl_get "/control/dns_info" >"$dns_info" || {
-		log_msg daemon.err "failed to read AdGuard DNS config"
+		log_rate_limited daemon.err profile_read "failed to read AdGuard DNS config"
 		return 1
 	}
 
 	json_replace_upstreams "$dns_info" "$upstreams" >"$body" || {
-		log_msg daemon.err "failed to build AdGuard DNS config payload"
+		log_rate_limited daemon.err "profile_build_$profile" "failed to build AdGuard DNS config payload"
 		return 1
 	}
 
 	curl_post_json "/control/dns_config" "$body" >/dev/null || {
-		log_msg daemon.err "failed to write AdGuard DNS $profile profile"
+		log_rate_limited daemon.err "profile_write_$profile" "failed to write AdGuard DNS $profile profile"
 		return 1
 	}
 
 	curl_post_json "/control/cache_clear" /dev/null >/dev/null 2>&1 || \
-		log_msg daemon.warn "AdGuard cache clear failed after $profile profile switch"
+		log_rate_limited daemon.warn "profile_cache_clear_$profile" "AdGuard cache clear failed after $profile profile switch"
 
 	printf '%s\n' "$profile" >"$STATE_DIR/current_profile"
 	log_msg daemon.info "applied AdGuard DNS $profile profile"
@@ -315,6 +357,8 @@ preflight() {
 }
 
 startup_preflight() {
+	failures=
+
 	for item in adguard_process port_53_adguard dhcp_advertises_lan_dns adguard_api; do
 		case "$item" in
 			adguard_process) "$PGREP_CMD" -f AdGuardHome >/dev/null 2>&1 ;;
@@ -323,8 +367,15 @@ startup_preflight() {
 			adguard_api) check_adguard_api ;;
 		esac
 
-		[ "$?" -eq 0 ] || return 1
+		if [ "$?" -ne 0 ]; then
+			failures="${failures:+$failures,}$item"
+		fi
 	done
+
+	[ -z "$failures" ] || {
+		printf '%s\n' "$failures"
+		return 1
+	}
 }
 
 valid_positive_number() {
@@ -341,11 +392,6 @@ run_loop() {
 		return 0
 	}
 
-	startup_preflight >/dev/null || {
-		log_msg daemon.err "AdGuard DNS auto switch preflight failed"
-		return 1
-	}
-
 	interval="$(uci_get adguard_check_interval)"
 	success_threshold="$(uci_get adguard_success_threshold)"
 	failure_threshold="$(uci_get adguard_failure_threshold)"
@@ -358,6 +404,12 @@ run_loop() {
 	failure_count=0
 
 	while :; do
+		if ! static_failures="$(startup_preflight)"; then
+			log_rate_limited daemon.err "static_preflight_$static_failures" "AdGuard DNS static preflight failed: $static_failures"
+			"$SLEEP_CMD" "$interval"
+			continue
+		fi
+
 		current="$(cat "$STATE_DIR/current_profile" 2>/dev/null || true)"
 		desired="$current"
 

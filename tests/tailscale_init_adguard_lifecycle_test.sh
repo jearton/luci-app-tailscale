@@ -27,6 +27,7 @@ chmod +x "$TMP_DIR/fake-adguard"
 cat >"$TMP_DIR/fake-helper" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${FAKE_HELPER_LOG:?}"
+[ -z "${FAKE_HELPER_FAIL_ARG:-}" ] || [ "$*" != "$FAKE_HELPER_FAIL_ARG" ] || exit 1
 SH
 chmod +x "$TMP_DIR/fake-helper"
 
@@ -57,7 +58,7 @@ run_apply_down() {
 
 		config_get() {
 			case "$3" in
-				adguard_default_upstreams) eval "$1=223.5.5.5" ;;
+				adguard_default_upstreams) eval "$1=9.9.9.9" ;;
 				*) eval "$1=" ;;
 			esac
 		}
@@ -68,7 +69,30 @@ run_apply_down() {
 	cat "$FAKE_ADGUARD_LOG"
 }
 
+run_disabled_start() {
+	FAKE_HELPER_LOG="$TMP_DIR/disabled-helper.log"
+	CONFIG_DIR="$TMP_DIR/disabled-config"
+	: >"$FAKE_HELPER_LOG"
+	mkdir -p "$CONFIG_DIR"
+	export FAKE_HELPER_LOG CONFIG_DIR
+
+	(
+		. "$INIT_SCRIPT"
+		PROG="$TMP_DIR/fake-helper"
+		CONFIG_PATH="$CONFIG_DIR"
+
+		config_get_bool() {
+			eval "$1=0"
+		}
+
+		start_instance settings >/dev/null 2>&1 || true
+	)
+
+	cat "$FAKE_HELPER_LOG"
+}
+
 run_stop_instance() {
+	helper_fail_arg="${1:-}"
 	FAKE_ADGUARD_LOG="$TMP_DIR/stop-adguard.log"
 	FAKE_HELPER_LOG="$TMP_DIR/helper.log"
 	ADGUARD_DNS_STATE_DIR="$TMP_DIR/stop-state"
@@ -84,7 +108,9 @@ run_stop_instance() {
 	: >"$TAILSCALED_CLEANUP_LOG"
 	mkdir -p "$ADGUARD_DNS_STATE_DIR" "$CONFIG_DIR"
 	printf 'up\n' >"$ADGUARD_DNS_STATE_DIR/current_profile"
-	export FAKE_ADGUARD_LOG FAKE_HELPER_LOG ADGUARD_DNS_STATE_DIR CONFIG_DIR UCI_CHANGES_OUT TAILSCALE_STATUS_OUT TAILSCALED_CLEANUP_LOG
+	printf 'recovery-state\n' >"$CONFIG_DIR/exit_node_firewall_state"
+	FAKE_HELPER_FAIL_ARG="$helper_fail_arg"
+	export FAKE_ADGUARD_LOG FAKE_HELPER_LOG FAKE_HELPER_FAIL_ARG ADGUARD_DNS_STATE_DIR CONFIG_DIR UCI_CHANGES_OUT TAILSCALE_STATUS_OUT TAILSCALED_CLEANUP_LOG
 
 	(
 		. "$INIT_SCRIPT"
@@ -103,7 +129,7 @@ run_stop_instance() {
 
 		config_get() {
 			case "$3" in
-				adguard_default_upstreams) eval "$1=223.5.5.5" ;;
+				adguard_default_upstreams) eval "$1=9.9.9.9" ;;
 				*) eval "$1=" ;;
 			esac
 		}
@@ -175,12 +201,21 @@ disabled_with_managed_profile_output="$(run_apply_down 0 up)"
 [ "$disabled_with_managed_profile_output" = "--apply-profile down" ] || fail "disabling a managed AdGuard DNS switch should restore the down profile
 actual: $disabled_with_managed_profile_output"
 
+disabled_helper_output="$(run_disabled_start)"
+[ "$disabled_helper_output" = "--cleanup-managed-firewall" ] || fail "disabled start should invoke complete managed firewall cleanup
+actual: ${disabled_helper_output:-<empty>}"
+
 run_stop_instance
 
 helper_output="$(cat "$TMP_DIR/helper.log")"
 [ "$helper_output" = "--cleanup-exit-node-firewall
 --cleanup-wan-direct-firewall" ] || fail "stop_instance should clean up exit-node and WAN-direct firewall state
 actual: ${helper_output:-<empty>}"
+
+if run_stop_instance "--cleanup-exit-node-firewall"; then
+	fail "stop_instance should report a managed firewall cleanup failure"
+fi
+[ -f "$CONFIG_DIR/exit_node_firewall_state" ] || fail "stop_instance must preserve helper recovery state when cleanup fails"
 
 normalized_default="$(
 	. "$INIT_SCRIPT"

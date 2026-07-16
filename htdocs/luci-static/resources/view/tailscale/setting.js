@@ -181,6 +181,18 @@ async function fetchAdguardPreflightStatus() {
 	}
 }
 
+async function writeAdguardDnsSwitchEnabled(section_id, value) {
+	const persistedEnabled = uci.get('tailscale', section_id, 'adguard_dns_switch_enabled') === '1';
+
+	if (value === '1' && !persistedEnabled) {
+		const status = await fetchAdguardPreflightStatus();
+		if (status.ready !== 'pass')
+			throw new Error(_('Only enable when all status checks pass.'));
+	}
+
+	return uci.set('tailscale', section_id, 'adguard_dns_switch_enabled', value);
+}
+
 async function refreshAdguardPreflightStatus() {
 	const status = await fetchAdguardPreflightStatus();
 
@@ -538,6 +550,9 @@ return view.extend({
 		o = s.taboption('adguard_dns', form.Flag, 'adguard_dns_switch_enabled', _('Enable AdGuard DNS Auto Switch'), _('Only enable when all status checks pass.'));
 		o.default = o.disabled;
 		o.rmempty = false;
+		o.write = function(section_id, value) {
+			return writeAdguardDnsSwitchEnabled(section_id, value);
+		};
 		o.validate = function(section_id, value) {
 			if (value !== '1')
 				return true;

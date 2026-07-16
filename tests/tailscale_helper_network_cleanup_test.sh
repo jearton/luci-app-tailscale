@@ -496,4 +496,65 @@ fi
 [ ! -e "$TMP_DIR/firewall-pending" ] || fail "failed UCI commit should not leave an apply-only retry marker"
 unset UCI_FAIL_COMMIT_PACKAGE
 
+run_helper "" 0 41641
+
+run_helper "peer-exit-node"
+[ -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "exit-node durability test requires persisted restore state"
+UCI_FAIL_COMMIT_PACKAGE=firewall
+export UCI_FAIL_COMMIT_PACKAGE
+if "$SCRIPT" --cleanup-exit-node-firewall >/dev/null 2>&1; then
+	fail "exit-node cleanup should fail when its firewall commit fails"
+fi
+[ -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "exit-node restore state must survive a failed UCI commit"
+unset UCI_FAIL_COMMIT_PACKAGE
+: >"$TMP_DIR/firewall.log"
+"$SCRIPT" --cleanup-exit-node-firewall
+[ ! -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "successful retry should remove exit-node restore state after commit and reload"
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "successful commit retry should reload the firewall"
+
+run_helper "peer-exit-node"
+[ -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "reload durability test requires persisted restore state"
+FIREWALL_FAIL_RELOAD=1
+FIREWALL_FAIL_RESTART=1
+export FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART
+if "$SCRIPT" --cleanup-exit-node-firewall >/dev/null 2>&1; then
+	fail "exit-node cleanup should fail when firewall reload and restart fail"
+fi
+[ -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "exit-node restore state must survive failed firewall apply"
+[ -f "$TMP_DIR/firewall-pending" ] || fail "failed exit-node firewall apply should preserve the pending retry marker"
+unset FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+"$SCRIPT" --cleanup-exit-node-firewall
+[ ! -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "pending-only successful retry should remove exit-node restore state"
+[ ! -f "$TMP_DIR/firewall-pending" ] || fail "pending-only successful retry should clear the firewall marker"
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "exit-node cleanup should retry an existing pending reload without a new UCI delta"
+
+run_helper "peer-exit-node" 1 41641 wan "ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts"
+cat >>"$TMP_DIR/uci_db" <<'EOF'
+firewall.user_rule=rule
+firewall.user_rule.name=User-owned rule
+firewall.user_rule.target=ACCEPT
+EOF
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+"$SCRIPT" --cleanup-managed-firewall
+
+managed_cleanup_db="$(cat "$TMP_DIR/uci_db")"
+for managed_section in tszone ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts ts_wan_direct_1_wan; do
+	assert_not_contains "firewall.$managed_section=" "$managed_cleanup_db" "managed cleanup should remove package-owned section $managed_section"
+done
+assert_contains "firewall.user_rule=rule" "$managed_cleanup_db" "managed cleanup must preserve unrelated user firewall sections"
+assert_contains "firewall.@defaults[0].forward=ACCEPT" "$managed_cleanup_db" "managed cleanup should restore stale exit-node firewall state"
+[ ! -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "managed cleanup should clear successfully restored exit-node state"
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" "managed cleanup should apply firewall changes"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+"$SCRIPT" --cleanup-managed-firewall
+[ ! -s "$TMP_DIR/uci_changes.log" ] || fail "managed firewall cleanup should be idempotent
+actual: $(cat "$TMP_DIR/uci_changes.log")"
+[ ! -s "$TMP_DIR/firewall.log" ] || fail "idempotent managed firewall cleanup should not reload without changes or a pending marker
+actual: $(cat "$TMP_DIR/firewall.log")"
+
 echo "tailscale_helper network cleanup tests passed"

@@ -62,10 +62,33 @@ assert_not_exists() {
 	[ ! -e "$ROOT_DIR/$1" ] || fail "$1 should not exist"
 }
 
+assert_no_active_config_list() {
+	option="$1"
+	file="$2"
+	if grep -E "^[[:space:]]*list[[:space:]]+$option([[:space:]]|$)" "$ROOT_DIR/$file" >/dev/null; then
+		fail "$file must not ship an active $option default"
+	fi
+}
+
 assert_contains "PKG_VERSION:=1.2.7" Makefile
 assert_file .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
 assert_contains "v*" .github/workflows/release.yml
+assert_contains "pull_request:" .github/workflows/release.yml
+assert_contains "branches:" .github/workflows/release.yml
+assert_contains "main" .github/workflows/release.yml
+assert_contains "test:" .github/workflows/release.yml
+assert_contains "for test in tests/*_test.sh" .github/workflows/release.yml
+assert_contains "for test in tests/*_test.js" .github/workflows/release.yml
+assert_contains "for file in root/etc/init.d/tailscale" .github/workflows/release.yml
+assert_contains "for file in htdocs/luci-static/resources/view/tailscale/*.js tests/*_test.js" .github/workflows/release.yml
+assert_contains "sh -n" .github/workflows/release.yml
+assert_contains "node --check" .github/workflows/release.yml
+assert_contains "jq -e" .github/workflows/release.yml
+assert_contains "msgfmt --check-format" .github/workflows/release.yml
+assert_contains "needs: test" .github/workflows/release.yml
+assert_contains "sdk_arch: x86_64-24.10.5" .github/workflows/release.yml
+assert_contains "if: startsWith(github.ref, 'refs/tags/')" .github/workflows/release.yml
 assert_contains "luci-app-tailscale_*.ipk" .github/workflows/release.yml
 assert_contains "luci-app-tailscale-*.apk" .github/workflows/release.yml
 
@@ -73,6 +96,10 @@ assert_file htdocs/luci-static/resources/view/tailscale/setting.js
 assert_file tests/setting_preflight_test.js
 assert_contains "refreshAdguardPreflightStatus" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_file root/etc/config/tailscale
+assert_no_active_config_list adguard_default_upstreams root/etc/config/tailscale
+assert_no_active_config_list adguard_tailnet_upstreams root/etc/config/tailscale
+assert_not_contains "litata.com" root/etc/config/tailscale
+assert_not_contains "litata.tailnet" root/etc/config/tailscale
 assert_file root/etc/init.d/tailscale
 assert_file root/usr/sbin/tailscale_helper
 assert_file root/usr/sbin/tailscale_keepalive

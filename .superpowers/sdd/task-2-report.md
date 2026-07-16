@@ -18,7 +18,7 @@ Date (UTC): 2026-07-13 18:45:31 UTC
   - added `"/usr/sbin/tailscale_peer_probe": [ "exec" ]` under `"read" -> "file"`.
 
 ## Verification
-- `sh tests/package_release_test.sh`  
+- `sh tests/package_release_test.sh`
   - before implementation: failed at missing `admin/vpn/tailscale/peers` assertion
   - after implementation: `package release tests passed`
 

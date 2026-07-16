@@ -57,11 +57,11 @@ cat >"$TMP_DIR/fake-tailscale" <<'SH'
 			exit 0
 			;;
 		"ping --c=1 --timeout=2s derp-peer")
-			echo "pong from derp-peer (100.64.2.1) via DERP(litata) in 41.8ms"
+			echo "pong from derp-peer (100.64.2.1) via DERP(test-relay) in 41.8ms"
 			exit 0
 			;;
 		"ping --c=1 --timeout=2s derp-no-direct-peer")
-			echo "pong from derp-no-direct-peer (100.64.2.6) via DERP(litata) in 67ms"
+			echo "pong from derp-no-direct-peer (100.64.2.6) via DERP(test-relay) in 67ms"
 			echo "direct connection not established"
 			exit 1
 			;;
@@ -99,18 +99,18 @@ assert_valid_json "$derp_output"
 assert_contains '"peer":"derp-peer"' "$derp_output"
 assert_contains '"ok":true' "$derp_output"
 assert_contains '"path":"derp"' "$derp_output"
-assert_contains '"relay":"litata"' "$derp_output"
+assert_contains '"relay":"test-relay"' "$derp_output"
 assert_contains '"latency_ms":41.8' "$derp_output"
-assert_contains '"summary":"DERP litata 41.8 ms"' "$derp_output"
+assert_contains '"summary":"DERP test-relay 41.8 ms"' "$derp_output"
 
 derp_no_direct_output="$(run_probe derp-no-direct-peer)"
 assert_valid_json "$derp_no_direct_output"
 assert_contains '"peer":"derp-no-direct-peer"' "$derp_no_direct_output"
 assert_contains '"ok":true' "$derp_no_direct_output"
 assert_contains '"path":"derp"' "$derp_no_direct_output"
-assert_contains '"relay":"litata"' "$derp_no_direct_output"
+assert_contains '"relay":"test-relay"' "$derp_no_direct_output"
 assert_contains '"latency_ms":67' "$derp_no_direct_output"
-assert_contains '"summary":"DERP litata 67 ms - direct connection not established"' "$derp_no_direct_output"
+assert_contains '"summary":"DERP test-relay 67 ms - direct connection not established"' "$derp_no_direct_output"
 
 unknown_output="$(run_probe weird-peer)"
 assert_valid_json "$unknown_output"

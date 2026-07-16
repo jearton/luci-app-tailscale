@@ -346,7 +346,7 @@ save_exit_node_firewall_state() {
 
 restore_exit_node_firewall_state() {
 	local default_forward_value default_forward_present lan_wan_enabled_present lan_wan_enabled_value
-	local changed lan_wan_section current_value
+	local lan_wan_section current_value
 
 	[ -r "$EXIT_NODE_FIREWALL_STATE_FILE" ] || return 0
 
@@ -357,16 +357,13 @@ restore_exit_node_firewall_state() {
 	lan_wan_forwarding_present=0
 	. "$EXIT_NODE_FIREWALL_STATE_FILE"
 
-	changed=0
 	if [ "${default_forward_present:-0}" = "1" ]; then
 		current_value="$(uci get firewall.@defaults[0].forward 2>/dev/null || true)"
 		if [ "$current_value" != "${default_forward_value:-}" ]; then
 			uci set "firewall.@defaults[0].forward=${default_forward_value}" || return 1
-			changed=1
 		fi
 	elif uci get firewall.@defaults[0].forward >/dev/null 2>&1; then
 		uci -q delete firewall.@defaults[0].forward || return 1
-		changed=1
 	fi
 
 	lan_wan_section="$(find_lan_wan_forwarding)"
@@ -375,18 +372,28 @@ restore_exit_node_firewall_state() {
 			current_value="$(uci get "$lan_wan_section.enabled" 2>/dev/null || true)"
 			if [ "$current_value" != "${lan_wan_enabled_value:-}" ]; then
 				uci set "$lan_wan_section.enabled=${lan_wan_enabled_value}" || return 1
-				changed=1
 			fi
 		elif uci get "$lan_wan_section.enabled" >/dev/null 2>&1; then
 			uci -q delete "$lan_wan_section.enabled" || return 1
-			changed=1
 		fi
 	fi
 
-	rm -f "$EXIT_NODE_FIREWALL_STATE_FILE"
-	if [ "$changed" -eq 1 ] && [ -n "$(uci changes firewall)" ]; then
-		apply_firewall_changes || return 1
-	fi
+	# Always run the apply path so a previous commit with a pending reload is
+	# retried even when the restored values already match UCI.
+	apply_firewall_changes || return 1
+	rm -f "$EXIT_NODE_FIREWALL_STATE_FILE" || return 1
+}
+
+cleanup_managed_firewall() {
+	restore_exit_node_firewall_state || return 1
+
+	ALLOW_WAN_DIRECT=0
+	configure_wan_direct_rule || return 1
+
+	ACCESS=
+	configure_tailscale_access_rules || return 1
+
+	apply_firewall_changes
 }
 
 case "${1:-}" in
@@ -405,6 +412,13 @@ case "${1:-}" in
 		}
 		apply_firewall_changes || {
 			log_error "Failed to apply Tailscale WAN direct firewall cleanup."
+			exit 1
+		}
+		exit 0
+		;;
+	--cleanup-managed-firewall)
+		cleanup_managed_firewall || {
+			log_error "Failed to remove Tailscale managed firewall state."
 			exit 1
 		}
 		exit 0

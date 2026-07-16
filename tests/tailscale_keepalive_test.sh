@@ -15,6 +15,76 @@ trap cleanup EXIT
 
 mkdir -p "$TMP_DIR"
 
+cat >"$TMP_DIR/jshn.sh" <<'SH'
+json_cleanup() {
+	JSHN_LEVEL=
+	JSHN_PEER=
+}
+
+json_load() {
+	JSHN_JSON="$1"
+	printf 'load\n' >>"${JSHN_TRACE:?}"
+}
+
+json_select() {
+	printf 'select %s\n' "$1" >>"${JSHN_TRACE:?}"
+	case "$1:$JSHN_LEVEL" in
+		Peer:)
+			JSHN_LEVEL=Peer
+			;;
+		TailscaleIPs:peer)
+			JSHN_LEVEL=ips
+			;;
+		..:ips)
+			JSHN_LEVEL=peer
+			;;
+		..:peer)
+			JSHN_LEVEL=Peer
+			JSHN_PEER=
+			;;
+		*:Peer)
+			JSHN_PEER="$1"
+			JSHN_LEVEL=peer
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+json_get_keys() {
+	values="$(printf '%s' "$JSHN_JSON" | "${REAL_JQ:?}" -r '.Peer | keys[]')"
+	eval "$1=\$values"
+	printf 'get_keys\n' >>"${JSHN_TRACE:?}"
+}
+
+json_get_var() {
+	value="$(printf '%s' "$JSHN_JSON" | "${REAL_JQ:?}" -r --arg peer "$JSHN_PEER" --arg field "$2" '.Peer[$peer][$field] // ""')"
+	eval "$1=\$value"
+	printf 'get_var %s\n' "$2" >>"${JSHN_TRACE:?}"
+}
+
+json_get_values() {
+	values="$(printf '%s' "$JSHN_JSON" | "${REAL_JQ:?}" -r --arg peer "$JSHN_PEER" '.Peer[$peer].TailscaleIPs[]?')"
+	eval "$1=\$values"
+	printf 'get_values\n' >>"${JSHN_TRACE:?}"
+}
+SH
+
+cat >"$TMP_DIR/python3" <<'SH'
+#!/bin/sh
+printf 'python fallback invoked\n' >>"${PYTHON_TRACE:?}"
+exit 1
+SH
+chmod +x "$TMP_DIR/python3"
+
+REAL_JQ="${REAL_JQ:-$(command -v jq)}"
+JSHN_TRACE="$TMP_DIR/jshn.trace"
+PYTHON_TRACE="$TMP_DIR/python.trace"
+: >"$JSHN_TRACE"
+: >"$PYTHON_TRACE"
+export REAL_JQ JSHN_TRACE PYTHON_TRACE
+
 cat >"$STATUS_FILE" <<'JSON'
 {
   "Peer": {
@@ -35,7 +105,7 @@ cat >"$STATUS_FILE" <<'JSON'
     },
     "nodekey:three": {
       "HostName": "no-ip-peer",
-      "DNSName": "no-ip-peer.litata.tailnet.",
+      "DNSName": "no-ip-peer.example.ts.net.",
       "TailscaleIPs": []
     },
     "nodekey:four": {
@@ -49,7 +119,7 @@ cat >"$STATUS_FILE" <<'JSON'
 }
 JSON
 
-output="$(TAILSCALE_STATUS_FILE="$STATUS_FILE" "$SCRIPT" --resolve-peers \
+output="$(PATH="$TMP_DIR:$PATH" JSHN_LIB="$TMP_DIR/jshn.sh" TAILSCALE_STATUS_FILE="$STATUS_FILE" "$SCRIPT" --resolve-peers \
 		site-a-openwrt \
 		site-b-gateway.example.tailnet \
 		100.64.100.2 \
@@ -69,6 +139,21 @@ if [ "$output" != "$expected" ]; then
 	printf 'unexpected resolver output\nexpected:\n%s\nactual:\n%s\n' "$expected" "$output" >&2
 	exit 1
 fi
+
+grep -F 'select Peer' "$JSHN_TRACE" >/dev/null || {
+	printf 'expected production jshn resolver path to select Peer\n' >&2
+	exit 1
+}
+grep -F 'get_values' "$JSHN_TRACE" >/dev/null || {
+	printf 'expected production jshn resolver path to read TailscaleIPs\n' >&2
+	exit 1
+}
+[ ! -s "$PYTHON_TRACE" ] || {
+	printf 'jshn resolver unexpectedly fell back to Python:\n' >&2
+	cat "$PYTHON_TRACE" >&2
+	exit 1
+}
+rm -f "$TMP_DIR/python3"
 
 cat >"$STATUS_FILE" <<'JSON'
 {"Peer":{"nodekey:one":{"TailscaleIPs":["100.64.100.9"],"DNSName":"compact-peer.example.tailnet.","HostName":"compact-peer"},"nodekey:two":{"DNSName":"reordered.example.tailnet.","HostName":"reordered-peer","Online":true,"TailscaleIPs":["100.64.100.10"]}}}
