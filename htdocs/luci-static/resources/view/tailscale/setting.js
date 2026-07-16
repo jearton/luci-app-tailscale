@@ -10,6 +10,7 @@
 'require poll';
 'require rpc';
 'require uci';
+'require ui';
 'require view';
 
 const callServiceList = rpc.declare({
@@ -44,10 +45,10 @@ const callSecretStatus = rpc.declare({
 	reject: true
 });
 
-const callSetSecret = rpc.declare({
+const callSetSecrets = rpc.declare({
 	object: 'luci.tailscale',
-	method: 'set_secret',
-	params: ['name', 'value', 'api_url', 'username'],
+	method: 'set_secrets',
+	params: ['authkey_set', 'authkey', 'adguard_password_set', 'adguard_password', 'api_url', 'username', 'base_ref'],
 	expect: { '': {} },
 	reject: true
 });
@@ -202,6 +203,70 @@ function buildAdguardPreflightRequest(values) {
 	};
 }
 
+function normalizeAdguardApiUrl(value) {
+	return String(value || '').replace(/\/+$/, '');
+}
+
+function adguardConfigChanged(candidate, persisted) {
+	const current = candidate || {};
+	const saved = persisted || {};
+	return normalizeAdguardApiUrl(current.api_url) !== normalizeAdguardApiUrl(saved.api_url) ||
+		String(current.username || '') !== String(saved.username || '') ||
+		String(current.default_upstreams || '') !== String(saved.default_upstreams || '') ||
+		String(current.tailnet_upstreams || '') !== String(saved.tailnet_upstreams || '') ||
+		String(current.health_domain || '') !== String(saved.health_domain || '') ||
+		String(current.expected_ips || '') !== String(saved.expected_ips || '');
+}
+
+function adguardBindingChanged(candidate, persisted) {
+	return normalizeAdguardApiUrl(candidate && candidate.api_url) !== normalizeAdguardApiUrl(persisted && persisted.api_url) ||
+		String(candidate && candidate.username || '') !== String(persisted && persisted.username || '');
+}
+
+function buildSecretUpdateRequest(values) {
+	const authkey = String(values.authkey || '').trim();
+	const adguardPassword = String(values.adguardPassword || '').trim();
+	return {
+		authkey_set: authkey ? '1' : '0',
+		authkey: authkey,
+		adguard_password_set: adguardPassword ? '1' : '0',
+		adguard_password: adguardPassword,
+		api_url: String(values.adguardApiUrl || '').trim(),
+		username: String(values.adguardUsername || '').trim(),
+		base_ref: String(values.baseRef || '').trim()
+	};
+}
+
+function saveMapWithSecrets(map, cb, silent, stageSecrets, afterSave) {
+	let stagedSecrets;
+	map.checkDepends();
+
+	return map.parse()
+		.then(cb)
+		.then(stageSecrets)
+		.then(function(staged) {
+			stagedSecrets = staged;
+			return map.data.save();
+		})
+		.then(map.load.bind(map))
+		.then(function() {
+			return afterSave(stagedSecrets);
+		})
+		.catch(function(e) {
+			if (!silent) {
+				ui.showModal(_('Save error'), [
+					E('p', {}, [ _('An error occurred while saving the form:') ]),
+					E('p', {}, [ E('em', { style: 'white-space:pre-wrap' }, [ e.message ]) ]),
+					E('div', { class: 'right' }, [
+						E('button', { class: 'cbi-button', click: ui.hideModal }, [ _('Dismiss') ])
+					])
+				]);
+			}
+			return Promise.reject(e);
+		})
+		.then(map.renderContents.bind(map));
+}
+
 async function fetchAdguardPreflightStatus(request) {
 	const input = request || {
 		candidate: '0',
@@ -236,10 +301,17 @@ async function fetchAdguardPreflightStatus(request) {
 	}
 }
 
-async function writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest) {
-	const persistedEnabled = uci.get('tailscale', section_id, 'adguard_dns_switch_enabled') === '1';
+async function writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest, persistedRequest) {
+	const persistedEnabled = persistedRequest && persistedRequest.enabled === '1';
+	const shouldPreflight = value === '1' && (
+		!persistedEnabled ||
+		candidateRequest.password_set === '1' ||
+		adguardConfigChanged(candidateRequest, persistedRequest)
+	);
 
-	if (value === '1' && !persistedEnabled) {
+	if (shouldPreflight) {
+		if (persistedEnabled && adguardBindingChanged(candidateRequest, persistedRequest) && !String(candidateRequest.password || '').trim())
+			throw new Error(_('Re-enter the AdGuard password after changing the API URL or username.'));
 		const status = await fetchAdguardPreflightStatus(candidateRequest);
 		if (status.ready !== 'pass')
 			throw new Error(_('Only enable when all status checks pass.'));
@@ -297,9 +369,29 @@ return view.extend({
 		const onlineExitNodes = statusData.onlineExitNodes;
 		const peers = statusData.peers;
 		const secretStatus = data[4] || {};
-		const hasAuthKey = secretStatus.authkey_set === '1';
+		let hasAuthKey = secretStatus.authkey_set === '1';
 		const savedKeepalivePeers = toList(uci.get('tailscale', 'settings', 'keepalive_peers'));
-		const hasAdguardPassword = secretStatus.adguard_password_set === '1';
+		let hasAdguardPassword = secretStatus.adguard_password_set === '1';
+		let saveInFlight = null;
+		let adguardPasswordOption, authKeyOption;
+		let persistedAdguardConfig;
+
+		function readPersistedAdguardConfig() {
+			const request = buildAdguardPreflightRequest({
+				apiUrl: uci.get('tailscale', 'settings', 'adguard_api_url'),
+				username: uci.get('tailscale', 'settings', 'adguard_username'),
+				password: '',
+				keepPassword: true,
+				defaultUpstreams: uci.get('tailscale', 'settings', 'adguard_default_upstreams'),
+				tailnetUpstreams: uci.get('tailscale', 'settings', 'adguard_tailnet_upstreams'),
+				healthDomain: uci.get('tailscale', 'settings', 'adguard_health_domain'),
+				expectedIps: uci.get('tailscale', 'settings', 'adguard_health_expected_ips')
+			});
+			request.enabled = uci.get('tailscale', 'settings', 'adguard_dns_switch_enabled') === '1' ? '1' : '0';
+			return request;
+		}
+
+		persistedAdguardConfig = readPersistedAdguardConfig();
 
 		m = new form.Map('tailscale', _('Tailscale'), _('Tailscale is a cross-platform and easy to use virtual LAN.'));
 
@@ -571,7 +663,7 @@ return view.extend({
 		o.rmempty = false;
 
 		s.tab('adguard_dns', _('AdGuard DNS'));
-		let adguardApiUrlOption, adguardUsernameOption, adguardPasswordOption;
+		let adguardApiUrlOption, adguardUsernameOption;
 		let adguardDefaultUpstreamsOption, adguardTailnetUpstreamsOption, adguardHealthDomainOption, adguardHealthExpectedIpsOption;
 
 		adguardApiUrlOption = s.taboption('adguard_dns', form.Value, 'adguard_api_url', _('AdGuard API URL'));
@@ -591,16 +683,7 @@ return view.extend({
 		adguardPasswordOption.cfgvalue = function() {
 			return '';
 		};
-		adguardPasswordOption.write = function(section_id, value) {
-			value = (value || '').trim();
-			if (value)
-				return callSetSecret(
-					'adguard_password',
-					value,
-					String(adguardApiUrlOption.formvalue(section_id) || '').trim(),
-					String(adguardUsernameOption.formvalue(section_id) || '').trim()
-				);
-		};
+		adguardPasswordOption.write = function() {};
 		adguardPasswordOption.remove = function() {};
 
 		o = s.taboption('adguard_dns', form.DummyValue, '_adguard_dns_status', _('Status'));
@@ -629,7 +712,7 @@ return view.extend({
 				expectedIps: adguardHealthExpectedIpsOption.formvalue(section_id)
 			});
 
-			return writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest);
+			return writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest, persistedAdguardConfig);
 		};
 		o.validate = function(section_id, value) {
 			if (value !== '1')
@@ -699,21 +782,69 @@ return view.extend({
 		o.default = '';
 		o.rmempty = true;
 
-		o = s.option(form.Value, 'authkey', _('Auth Key'));
-		o.password = true;
-		o.default = '';
-		o.rmempty = true;
-		o.placeholder = hasAuthKey ? _('Configured') : '';
-		o.description = _('Leave blank to keep the existing auth key; enter a new value to replace it.');
-		o.cfgvalue = function() {
+		authKeyOption = s.option(form.Value, 'authkey', _('Auth Key'));
+		authKeyOption.password = true;
+		authKeyOption.default = '';
+		authKeyOption.rmempty = true;
+		authKeyOption.placeholder = hasAuthKey ? _('Configured') : '';
+		authKeyOption.description = _('Leave blank to keep the existing auth key; enter a new value to replace it.');
+		authKeyOption.cfgvalue = function() {
 			return '';
 		};
-		o.write = function(section_id, value) {
-			value = (value || '').trim();
-			if (value)
-				return callSetSecret('authkey', value, '', '');
+		authKeyOption.write = function() {};
+		authKeyOption.remove = function() {};
+
+		m.save = function(cb, silent) {
+			if (saveInFlight)
+				return saveInFlight;
+
+			const map = this;
+			saveInFlight = saveMapWithSecrets(map, cb, silent, function() {
+				const request = Object.freeze(buildSecretUpdateRequest({
+					authkey: authKeyOption.formvalue('settings'),
+					adguardPassword: adguardPasswordOption.formvalue('settings'),
+					adguardApiUrl: adguardApiUrlOption.formvalue('settings'),
+					adguardUsername: adguardUsernameOption.formvalue('settings'),
+					baseRef: uci.get('tailscale', 'settings', 'secrets_ref')
+				}));
+
+				if (request.authkey_set !== '1' && request.adguard_password_set !== '1')
+					return { request: request, ref: request.base_ref };
+
+				return callSetSecrets(
+					request.authkey_set,
+					request.authkey,
+					request.adguard_password_set,
+					request.adguard_password,
+					request.api_url,
+					request.username,
+					request.base_ref
+				).then(function(result) {
+					const ref = String(result && result.ref || '');
+					if (!result || result.code !== 0 || !/^[A-Za-z0-9_.-]+$/.test(ref))
+						throw new Error(_('Failed to stage protected credentials.'));
+					uci.set('tailscale', 'settings', 'secrets_ref', ref);
+					return { request: request, ref: ref };
+				});
+			}, function(staged) {
+				const request = staged.request;
+				const updateStatus = function() {
+					if (request.authkey_set === '1') {
+						hasAuthKey = true;
+						authKeyOption.placeholder = _('Configured');
+					}
+					if (request.adguard_password_set === '1') {
+						hasAdguardPassword = true;
+						adguardPasswordOption.placeholder = _('Configured');
+					}
+					persistedAdguardConfig = readPersistedAdguardConfig();
+				};
+				updateStatus();
+			}).finally(function() {
+				saveInFlight = null;
+			});
+			return saveInFlight;
 		};
-		o.remove = function() {};
 
 		return Promise.resolve(m.render()).then(function(node) {
 			window.setTimeout(refreshAdguardPreflightStatus, 0);

@@ -27,5 +27,11 @@ grep -F '>> "$GITHUB_STEP_SUMMARY"' "$workflow" >/dev/null
 grep -F 'name: Upload build diagnostics' "$workflow" >/dev/null
 grep -F 'if: failure()' "$workflow" >/dev/null
 grep -F 'logs/**' "$workflow" >/dev/null
+grep -E 'sdk_arch: x86_64-24\.10\.5@sha256:[0-9a-f]{64}' "$workflow" >/dev/null
+grep -E 'sdk_arch: x86_64@sha256:[0-9a-f]{64}' "$workflow" >/dev/null
+if grep -Eq 'sdk_arch: x86_64(-24\.10\.5)?$' "$workflow"; then
+	printf '%s\n' 'release SDK images must be pinned by digest' >&2
+	exit 1
+fi
 
 printf '%s\n' 'release workflow diagnostics test passed'

@@ -17,6 +17,10 @@ service_triggers() {
 	procd_add_reload_trigger "tailscale"
 }
 
+reload_in_progress() {
+	[ "${TAILSCALE_INTERNAL_RELOAD:-0}" = "1" ]
+}
+
 section_enabled() {
 	config_get_bool enabled "$1" 'enabled' 0
 	[ $enabled -gt 0 ]
@@ -185,7 +189,13 @@ tailscale_adguard_dns_apply_down() {
 
 start_instance() {
 	local cfg="$1"
-	local port config_path fw_mode std_out std_err state_file allow_wan_direct
+	local port config_path fw_mode std_out std_err state_file allow_wan_direct secrets_ref
+
+	config_get secrets_ref "$cfg" 'secrets_ref'
+	if [ -n "$secrets_ref" ] && ! "$PROGS" activate "$secrets_ref"; then
+		logger -p daemon.err -t tailscale "failed to activate protected credential version"
+		return 1
+	fi
 
 	if ! section_enabled "$cfg"; then
 		TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH" \
@@ -243,18 +253,16 @@ start_service() {
 
 stop_instance() {
 	local cfg="$1"
-	local helper_cleanup_failed=0 enabled allow_wan_direct
+	local helper_cleanup_failed=0 cleanup_action
 
+	if reload_in_progress; then
+		cleanup_action=--cleanup-exit-node-firewall
+	else
+		cleanup_action=--cleanup-managed-firewall
+	fi
 	TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH" \
 		FIREWALL_PENDING_STATE_FILE="$FIREWALL_PENDING_STATE_FILE" \
-		"$PROG" --cleanup-exit-node-firewall || helper_cleanup_failed=1
-	config_get_bool enabled "$cfg" 'enabled' 0
-	config_get_bool allow_wan_direct "$cfg" 'allow_wan_direct' 0
-	if [ "$enabled" != "1" ] || [ "$allow_wan_direct" != "1" ]; then
-		TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH" \
-			FIREWALL_PENDING_STATE_FILE="$FIREWALL_PENDING_STATE_FILE" \
-			"$PROG" --cleanup-wan-direct-firewall || helper_cleanup_failed=1
-	fi
+		"$PROG" "$cleanup_action" || helper_cleanup_failed=1
 
 	# Remove dnsmasq settings
 	MagicDNSSuffix=$(tailscale status --json | awk -F'"' '/"MagicDNSSuffix"/ {last=$(NF-1)} END {print last}')
@@ -285,6 +293,10 @@ service_stopped() {
 }
 
 reload_service() {
-	stop
-	start
+	local reload_status=0
+	TAILSCALE_INTERNAL_RELOAD=1
+	stop || reload_status=1
+	TAILSCALE_INTERNAL_RELOAD=0
+	start || reload_status=1
+	return "$reload_status"
 }

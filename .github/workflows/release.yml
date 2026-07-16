@@ -77,10 +77,10 @@ jobs:
       matrix:
         include:
           - package_format: ipk
-            sdk_arch: x86_64-24.10.5
+            sdk_arch: x86_64-24.10.5@sha256:df46cd5d68013d737a1cf45725108dc9f33e28ae6d3de48ad05ef8b81b7cbf35
             artifact_glob: "*.ipk"
           - package_format: apk
-            sdk_arch: x86_64
+            sdk_arch: x86_64@sha256:95cc0c395223b70ab37e6bba3d8e9e45dbcfdd0295fae93eaff7fadab876522b
             artifact_glob: "*.apk"
 
     steps:

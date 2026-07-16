@@ -22,7 +22,8 @@ assert(
 );
 
 assert(source.includes("method: 'secret_status'"), 'setting view must load credential presence through a dedicated RPC');
-assert(source.includes("method: 'set_secret'"), 'setting view must write credentials through a dedicated RPC');
+assert(source.includes("method: 'set_secrets'"), 'setting view must atomically write all changed credentials through one RPC');
+assert(source.includes("params: ['authkey_set', 'authkey', 'adguard_password_set', 'adguard_password', 'api_url', 'username', 'base_ref']"), 'credential staging must identify the secret version it extends');
 assert(
 	/load\(\)\s*\{\s*return callSecretStatus\(\)\.then/.test(source),
 	'setting view must finish credential migration before loading the readable UCI configuration'
@@ -45,7 +46,7 @@ const candidateValues = {
 	expectedIps: ['10.23.0.15', '10.23.0.16']
 };
 
-async function testEnablementWrite({ persistedEnabled, value, preflightResult, preflightError, candidateRequest }) {
+async function testEnablementWrite({ persistedEnabled, value, preflightResult, preflightError, candidateRequest, persistedRequest }) {
 	const calls = [];
 	const context = {
 		module: { exports: {} },
@@ -81,7 +82,11 @@ async function testEnablementWrite({ persistedEnabled, value, preflightResult, p
 		context
 	);
 
-	const builtCandidateRequest = context.module.exports.buildAdguardPreflightRequest(candidateValues);
+	const builtCandidateRequest = context.module.exports.buildAdguardPreflightRequest(
+		persistedEnabled
+			? { ...candidateValues, password: '', keepPassword: true }
+			: candidateValues
+	);
 
 	let result;
 	let error;
@@ -89,7 +94,8 @@ async function testEnablementWrite({ persistedEnabled, value, preflightResult, p
 		result = await context.module.exports.writeAdguardDnsSwitchEnabled(
 			'settings',
 			value,
-			candidateRequest || builtCandidateRequest
+			candidateRequest || builtCandidateRequest,
+			persistedRequest || Object.assign({}, builtCandidateRequest, { enabled: persistedEnabled ? '1' : '0' })
 		);
 	} catch (e) {
 		error = e;
@@ -129,8 +135,58 @@ async function testEnablementWrite({ persistedEnabled, value, preflightResult, p
 		value: '1',
 		preflightError: new Error('transient health failure')
 	});
-	assert(outcome.calls.every(call => call.type !== 'rpc'), 'already-enabled saves must not rerun or gate on preflight');
+	assert(outcome.calls.every(call => call.type !== 'rpc'), 'unchanged already-enabled saves must not rerun or gate on preflight');
 	assert(outcome.calls.some(call => call.type === 'set' && call.value === '1'), 'already-enabled saves must remain writable');
+
+	const persistedRequest = Object.assign({}, vm.runInNewContext(
+		`${helperSource}\nbuildAdguardPreflightRequest(${JSON.stringify({ ...candidateValues, password: '', keepPassword: true })})`,
+		{
+			module: { exports: {} },
+			console,
+			_: value => value,
+			rpc: { declare: () => function() {} },
+			fs: {},
+			uci: {}
+		}
+	), { enabled: '1' });
+
+	const changedEndpointWithoutPassword = Object.assign({}, persistedRequest, {
+		api_url: 'http://changed.example:3000'
+	});
+	outcome = await testEnablementWrite({
+		persistedEnabled: true,
+		value: '1',
+		candidateRequest: changedEndpointWithoutPassword,
+		persistedRequest
+	});
+	assert(outcome.error && /password/i.test(outcome.error.message), 'changing a bound AdGuard endpoint must require the password again');
+	assert(outcome.calls.every(call => call.type !== 'rpc' && call.type !== 'set'), 'missing replacement password must fail before preflight or UCI mutation');
+
+	const changedEndpointWithPassword = Object.assign({}, changedEndpointWithoutPassword, {
+		password_set: '1',
+		password: 'replacement-password'
+	});
+	outcome = await testEnablementWrite({
+		persistedEnabled: true,
+		value: '1',
+		candidateRequest: changedEndpointWithPassword,
+		persistedRequest,
+		preflightResult: { ready: 'pass' }
+	});
+	assert(outcome.calls.filter(call => call.type === 'rpc').length === 1, 'changed AdGuard endpoint with a replacement password must rerun preflight');
+	assert(outcome.calls.some(call => call.type === 'set' && call.value === '1'), 'passing changed-endpoint preflight must save the enabled flag');
+
+	const changedHealthDomain = Object.assign({}, persistedRequest, {
+		health_domain: 'changed-health.example.test'
+	});
+	outcome = await testEnablementWrite({
+		persistedEnabled: true,
+		value: '1',
+		candidateRequest: changedHealthDomain,
+		persistedRequest,
+		preflightResult: { ready: 'pass' }
+	});
+	assert(outcome.calls.filter(call => call.type === 'rpc').length === 1, 'changed AdGuard health configuration must rerun preflight');
 
 	outcome = await testEnablementWrite({
 		persistedEnabled: false,
@@ -155,9 +211,88 @@ async function testEnablementWrite({ persistedEnabled, value, preflightResult, p
 	assert(keepPasswordRequest.password === '', 'persisted password must not be copied into the browser RPC request');
 
 	assert(
-		source.includes('buildAdguardPreflightRequest({') && source.includes('writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest)'),
+		source.includes('buildAdguardPreflightRequest({') && source.includes('writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest, persistedAdguardConfig)'),
 		'the AdGuard flag write hook must build candidate values from the live form before preflight'
 	);
+
+	const atomicContext = {
+		module: { exports: {} },
+		console,
+		_: value => value,
+		rpc: { declare: () => function() {} },
+		fs: {},
+		ui: { showModal: () => {} },
+		uci: {},
+		E: () => ({})
+	};
+	vm.runInNewContext(
+		`${helperSource}\nmodule.exports = { buildSecretUpdateRequest, saveMapWithSecrets };`,
+		atomicContext
+	);
+	const secretRequest = atomicContext.module.exports.buildSecretUpdateRequest({
+		authkey: 'new-auth-key',
+		adguardPassword: 'new-adguard-password',
+		adguardApiUrl: 'https://adguard.example:3000',
+		adguardUsername: 'root'
+	});
+	assert(secretRequest.authkey_set === '1' && secretRequest.adguard_password_set === '1', 'one atomic request must carry both changed credentials');
+	assert(source.includes("uci.set('tailscale', 'settings', 'secrets_ref'"), 'staged credentials must be activated through a UCI-managed version reference');
+	assert(source.includes('saveInFlight'), 'concurrent Save and Save & Apply actions must share one in-flight save transaction');
+
+	const saveCalls = [];
+	const map = {
+		checkDepends: () => saveCalls.push('depends'),
+		parse: async () => saveCalls.push('parse'),
+		data: { save: async () => saveCalls.push('uci-save') },
+		load: async () => saveCalls.push('load'),
+		renderContents: async () => saveCalls.push('render')
+	};
+	await atomicContext.module.exports.saveMapWithSecrets(
+		map,
+		undefined,
+		true,
+		async () => { saveCalls.push('stage'); return { ref: 'staged-ref' }; },
+		async staged => saveCalls.push(`after:${staged.ref}`)
+	);
+	assert(saveCalls.join(',') === 'depends,parse,stage,uci-save,load,after:staged-ref,render', 'credentials must be staged before the UCI reference is saved and remain inactive until apply');
+
+	let afterSaveCalled = false;
+	const failingMap = {
+		checkDepends: () => {},
+		parse: async () => {},
+		data: { save: async () => { throw new Error('uci save failed'); } },
+		load: async () => {},
+		renderContents: async () => {}
+	};
+	try {
+		await atomicContext.module.exports.saveMapWithSecrets(
+			failingMap,
+			undefined,
+			true,
+			async () => ({ ref: 'orphaned-but-inactive-ref' }),
+			async () => { afterSaveCalled = true; }
+		);
+	} catch (e) {}
+	assert(!afterSaveCalled, 'failed UCI persistence must not report the staged credential reference as saved');
+
+	let uciSaveCalled = false;
+	const stageFailingMap = {
+		checkDepends: () => {},
+		parse: async () => {},
+		data: { save: async () => { uciSaveCalled = true; } },
+		load: async () => {},
+		renderContents: async () => {}
+	};
+	try {
+		await atomicContext.module.exports.saveMapWithSecrets(
+			stageFailingMap,
+			undefined,
+			true,
+			async () => { throw new Error('secret staging failed'); },
+			async () => {}
+		);
+	} catch (e) {}
+	assert(!uciSaveCalled, 'failed secret staging must not save a UCI reference or any other form changes');
 
 	console.log('setting preflight tests passed');
 })().catch(error => {

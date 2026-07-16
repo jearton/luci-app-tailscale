@@ -530,6 +530,18 @@ msgstr "启用 AdGuard DNS 自动切换"
 msgid "Only enable when all status checks pass."
 msgstr "仅在所有状态检查通过后启用。"
 
+msgid "Re-enter the AdGuard password after changing the API URL or username."
+msgstr "修改 API URL 或用户名后，请重新输入 AdGuard 密码。"
+
+msgid "Save error"
+msgstr "保存出错"
+
+msgid "An error occurred while saving the form:"
+msgstr "保存表单时出错："
+
+msgid "Failed to stage protected credentials."
+msgstr "暂存受保护凭证失败。"
+
 msgid "Health Check Domain is required before enabling AdGuard DNS auto switch."
 msgstr "启用 AdGuard DNS 自动切换前必须填写健康检查域名。"
 

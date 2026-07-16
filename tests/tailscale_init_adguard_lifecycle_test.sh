@@ -31,6 +31,12 @@ printf '%s\n' "$*" >>"${FAKE_HELPER_LOG:?}"
 SH
 chmod +x "$TMP_DIR/fake-helper"
 
+cat >"$TMP_DIR/fake-secrets" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${FAKE_SECRETS_LOG:?}"
+SH
+chmod +x "$TMP_DIR/fake-secrets"
+
 run_apply_down() {
 	switch_enabled="$1"
 	state_profile="${2:-}"
@@ -71,18 +77,27 @@ run_apply_down() {
 
 run_disabled_start() {
 	FAKE_HELPER_LOG="$TMP_DIR/disabled-helper.log"
+	FAKE_SECRETS_LOG="$TMP_DIR/disabled-secrets.log"
 	CONFIG_DIR="$TMP_DIR/disabled-config"
 	: >"$FAKE_HELPER_LOG"
+	: >"$FAKE_SECRETS_LOG"
 	mkdir -p "$CONFIG_DIR"
-	export FAKE_HELPER_LOG CONFIG_DIR
+	export FAKE_HELPER_LOG FAKE_SECRETS_LOG CONFIG_DIR
 
 	(
 		. "$INIT_SCRIPT"
 		PROG="$TMP_DIR/fake-helper"
+		PROGS="$TMP_DIR/fake-secrets"
 		CONFIG_PATH="$CONFIG_DIR"
 
 		config_get_bool() {
 			eval "$1=0"
+		}
+		config_get() {
+			case "$3" in
+				secrets_ref) eval "$1=disabled-secret-ref" ;;
+				*) eval "$1=" ;;
+			esac
 		}
 
 		start_instance settings >/dev/null 2>&1 || true
@@ -93,6 +108,7 @@ run_disabled_start() {
 
 run_stop_instance() {
 	helper_fail_arg="${1:-}"
+	reload_mode="${2:-0}"
 	FAKE_ADGUARD_LOG="$TMP_DIR/stop-adguard.log"
 	FAKE_HELPER_LOG="$TMP_DIR/helper.log"
 	ADGUARD_DNS_STATE_DIR="$TMP_DIR/stop-state"
@@ -119,6 +135,7 @@ run_stop_instance() {
 		PROGD="$TMP_DIR/fake-tailscaled"
 		CONFIG_PATH="$CONFIG_DIR"
 		ADGUARD_DNS_STATE_DIR="$ADGUARD_DNS_STATE_DIR"
+		TAILSCALE_INTERNAL_RELOAD="$reload_mode"
 
 		config_get_bool() {
 			case "$3" in
@@ -243,6 +260,8 @@ actual: $disabled_with_managed_profile_output"
 disabled_helper_output="$(run_disabled_start)"
 [ "$disabled_helper_output" = "--cleanup-managed-firewall" ] || fail "disabled start should invoke complete managed firewall cleanup
 actual: ${disabled_helper_output:-<empty>}"
+[ "$(cat "$TMP_DIR/disabled-secrets.log")" = "activate disabled-secret-ref" ] || fail "every start, including a disabled service, must activate the credential version selected by UCI
+actual: $(cat "$TMP_DIR/disabled-secrets.log")"
 
 run_stop_instance
 
@@ -254,11 +273,16 @@ service_stopped_output="$(run_service_stopped)"
 actual: ${service_stopped_output:-<empty>}"
 
 helper_output="$(cat "$TMP_DIR/helper.log")"
-[ "$helper_output" = "--cleanup-exit-node-firewall
---cleanup-wan-direct-firewall" ] || fail "stop_instance should clean up exit-node and WAN-direct firewall state
+[ "$helper_output" = "--cleanup-managed-firewall" ] || fail "final stop_instance should remove every managed firewall rule
 actual: ${helper_output:-<empty>}"
 
-if run_stop_instance "--cleanup-exit-node-firewall"; then
+run_stop_instance "" 1
+reload_helper_output="$(cat "$TMP_DIR/helper.log")"
+[ "$reload_helper_output" = "--cleanup-exit-node-firewall" ] || fail "reload stop should retain persistent Tailscale zone, forwarding, and WAN-direct rules
+actual: ${reload_helper_output:-<empty>}"
+[ ! -e "$TMP_DIR/reloading" ] || fail "reload state must not be shared through a stale PID marker file"
+
+if run_stop_instance "--cleanup-managed-firewall"; then
 	fail "stop_instance should report a managed firewall cleanup failure"
 fi
 [ -f "$CONFIG_DIR/exit_node_firewall_state" ] || fail "stop_instance must preserve helper recovery state when cleanup fails"

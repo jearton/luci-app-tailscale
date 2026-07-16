@@ -18,7 +18,7 @@
 		},
 		"write": {
 			"ubus": {
-				"luci.tailscale": [ "adguard_preflight", "set_secret" ]
+				"luci.tailscale": [ "adguard_preflight", "set_secrets" ]
 			},
 			"uci": [ "tailscale" ]
 		}

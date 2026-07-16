@@ -141,7 +141,8 @@ assert_contains "node --check" .github/workflows/release.yml
 assert_contains "jq -e" .github/workflows/release.yml
 assert_contains "msgfmt --check-format" .github/workflows/release.yml
 assert_contains "needs: test" .github/workflows/release.yml
-assert_contains "sdk_arch: x86_64-24.10.5" .github/workflows/release.yml
+assert_contains "sdk_arch: x86_64-24.10.5@sha256:" .github/workflows/release.yml
+assert_contains "sdk_arch: x86_64@sha256:" .github/workflows/release.yml
 assert_contains "if: startsWith(github.ref, 'refs/tags/')" .github/workflows/release.yml
 assert_contains "luci-app-tailscale_*.ipk" .github/workflows/release.yml
 assert_contains "luci-app-tailscale-*.apk" .github/workflows/release.yml
@@ -519,8 +520,11 @@ assert_contains 'msgid "Leave blank to keep the existing AdGuard password; enter
 assert_contains 'msgstr "留空则保留现有 AdGuard 密码；填写新值则覆盖。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Leave blank to keep the existing auth key; enter a new value to replace it."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "留空则保留现有认证密钥；填写新值则覆盖。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Failed to stage protected credentials."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "暂存受保护凭证失败。"' po/zh_Hans/tailscale.po
 assert_contains '"luci.tailscale": [ "secret_status" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
-assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secret" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secrets" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_not_contains '"set_secret"' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains '"/usr/sbin/tailscale_peer_probe": [ "exec" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
@@ -528,6 +532,13 @@ assert_not_contains "config_get authkey" root/etc/init.d/tailscale
 assert_contains 'tailscale_secrets migrate' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains "option adguard_password" root/etc/config/tailscale
 assert_not_contains "option authkey" root/etc/config/tailscale
+assert_contains "--cleanup-managed-firewall" root/etc/init.d/tailscale
+assert_contains "TAILSCALE_INTERNAL_RELOAD" root/etc/init.d/tailscale
+assert_not_contains "RELOAD_MARKER_FILE" root/etc/init.d/tailscale
+assert_contains 'activate "$secrets_ref"' root/etc/init.d/tailscale
+assert_contains "Package/luci-app-tailscale/prerm" Makefile
+assert_contains "/etc/init.d/tailscale stop" Makefile
+assert_not_contains "/etc/init.d/tailscale stop >/dev/null 2>&1 || true" Makefile
 
 assert_not_exists root/lib/netifd/proto/tailscale.sh
 assert_not_exists htdocs/luci-static/resources/protocol/tailscale.js

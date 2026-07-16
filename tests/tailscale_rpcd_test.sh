@@ -30,8 +30,9 @@ case "${1:-}" in
 	matches-adguard)
 		[ "${2:-}" = 'http://saved.example:3000' ] && [ "${3:-}" = 'saved-user' ]
 		;;
-	set-authkey|set-adguard)
+	stage-batch)
 		cat >"${SECRETS_STDIN_LOG:?}"
+		printf '%s\n' 'staged-ref'
 		;;
 	migrate) ;;
 	*) exit 1 ;;
@@ -68,7 +69,7 @@ export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG
 list_json="$(PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" list)"
 printf '%s' "$list_json" | jq -e '.adguard_preflight.candidate == "" and .adguard_preflight.password == ""' >/dev/null || \
 	fail "rpcd list output must declare the AdGuard preflight string arguments"
-printf '%s' "$list_json" | jq -e '.secret_status == {} and .set_secret.name == "" and .set_secret.value == ""' >/dev/null || \
+printf '%s' "$list_json" | jq -e '.secret_status == {} and (has("set_secret") | not) and .set_secrets.authkey_set == "" and .set_secrets.adguard_password_set == "" and .set_secrets.base_ref == ""' >/dev/null || \
 	fail "rpcd list output must declare secret status and write methods"
 
 status_response="$(printf '%s\n' '{}' | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call secret_status)"
@@ -101,10 +102,20 @@ if printf '%s\n' "$unsafe_request" | PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_B
 fi
 [ ! -s "$PREFLIGHT_ARGV_LOG" ] || fail "rejected API schemes must not invoke the preflight checker"
 
-set_request='{"name":"adguard_password","value":"new-secret","api_url":"http://new.example:3000","username":"new-user"}'
-printf '%s\n' "$set_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secret >/dev/null
-printf '%s' "$(cat "$SECRETS_STDIN_LOG")" | jq -e '.password == "new-secret" and .api_url == "http://new.example:3000" and .username == "new-user"' >/dev/null || \
-	fail "AdGuard secret writes must preserve the endpoint binding"
+: >"$SECRETS_ARGV_LOG"
+: >"$SECRETS_STDIN_LOG"
+batch_request='{"authkey_set":"1","authkey":"new-auth-key","adguard_password_set":"1","adguard_password":"new-batch-secret","api_url":"https://batch.example:3000","username":"batch-user","base_ref":"active-ref"}'
+batch_response="$(printf '%s\n' "$batch_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secrets)"
+[ "$(cat "$SECRETS_ARGV_LOG")" = "stage-batch active-ref" ] || fail "batch credential writes must stage one atomic secret version based on the current UCI reference"
+printf '%s' "$(cat "$SECRETS_STDIN_LOG")" | jq -e '.authkey == "new-auth-key" and .adguard.password == "new-batch-secret" and .adguard.api_url == "https://batch.example:3000" and .adguard.username == "batch-user"' >/dev/null || \
+	fail "batch credential writes must preserve both credentials and the AdGuard endpoint binding"
+printf '%s' "$batch_response" | jq -e '.code == 0 and .ref == "staged-ref"' >/dev/null || \
+	fail "batch credential staging must return the UCI version reference without activating it"
+
+legacy_set_request='{"name":"adguard_password","value":"new-secret","api_url":"http://new.example:3000","username":"new-user"}'
+if printf '%s\n' "$legacy_set_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secret >/dev/null 2>&1; then
+	fail "the non-transactional legacy secret write RPC must fail closed"
+fi
 
 printf '%s\n' '{}' | PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call unknown >/dev/null 2>&1 && \
 	fail "unknown rpcd methods must fail closed"

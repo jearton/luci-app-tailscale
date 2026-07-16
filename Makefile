@@ -10,6 +10,14 @@ LUCI_PKGARCH:=all
 
 PKG_VERSION:=1.2.7
 
+define Package/luci-app-tailscale/prerm
+#!/bin/sh
+if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale ]; then
+	/etc/init.d/tailscale stop >/dev/null 2>&1 || exit 1
+fi
+exit 0
+endef
+
 include $(TOPDIR)/feeds/luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature

@@ -8,7 +8,7 @@ SECRETS_BIN="${SECRETS_BIN:-/usr/sbin/tailscale_secrets}"
 JQ_BIN="${JQ_BIN:-jq}"
 
 print_methods() {
-	printf '%s\n' '{"secret_status":{},"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""},"set_secret":{"name":"","value":"","api_url":"","username":""}}'
+	printf '%s\n' '{"secret_status":{},"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""},"set_secrets":{"authkey_set":"","authkey":"","adguard_password_set":"","adguard_password":"","api_url":"","username":"","base_ref":""}}'
 }
 
 fail_json() {
@@ -112,30 +112,47 @@ run_secret_status() {
 		'{authkey_set:$authkey_set,adguard_password_set:$adguard_password_set}'
 }
 
-run_set_secret() {
+run_set_secrets() {
 	request="$(cat)"
 	printf '%s' "$request" | "$JQ_BIN" -e '
 		type == "object" and
-		(.name | type == "string") and
-		(.value | type == "string" and length > 0) and
+		(.authkey_set | type == "string" and (. == "0" or . == "1")) and
+		(.authkey | type == "string") and
+		(.adguard_password_set | type == "string" and (. == "0" or . == "1")) and
+		(.adguard_password | type == "string") and
 		(.api_url | type == "string") and
-		(.username | type == "string")
-	' >/dev/null 2>&1 || fail_json "invalid secret request"
-	name="$(printf '%s' "$request" | "$JQ_BIN" -r '.name')"
-	case "$name" in
-		authkey)
-			printf '%s' "$request" | "$JQ_BIN" -jr '.value' | "$SECRETS_BIN" set-authkey || \
-				fail_json "failed to store auth key"
-			;;
-		adguard_password)
-			printf '%s' "$request" | "$JQ_BIN" -c '{password:.value,api_url:.api_url,username:.username}' | \
-				"$SECRETS_BIN" set-adguard || fail_json "failed to store AdGuard password"
-			;;
-		*)
-			fail_json "invalid secret name"
-			;;
+		(.username | type == "string") and
+		(.base_ref | type == "string" and test("^[A-Za-z0-9_.-]*$")) and
+		(if .authkey_set == "1" then (.authkey | length > 0) else true end) and
+		(if .adguard_password_set == "1" then
+			(.adguard_password | length > 0) and (.api_url | test("^https?://.+"))
+		 else true end)
+	' >/dev/null 2>&1 || fail_json "invalid credential batch request"
+
+	authkey_set="$(printf '%s' "$request" | "$JQ_BIN" -r '.authkey_set')"
+	adguard_password_set="$(printf '%s' "$request" | "$JQ_BIN" -r '.adguard_password_set')"
+	base_ref="$(printf '%s' "$request" | "$JQ_BIN" -r '.base_ref')"
+	if [ "$authkey_set" = "0" ] && [ "$adguard_password_set" = "0" ]; then
+		"$JQ_BIN" -nc --arg ref "$base_ref" '{code:0,ref:$ref}'
+		return 0
+	fi
+
+	if ! ref="$(printf '%s' "$request" | "$JQ_BIN" -c '
+		{
+			authkey: (if .authkey_set == "1" then .authkey else null end),
+			adguard: (if .adguard_password_set == "1" then {
+				password: .adguard_password,
+				api_url: .api_url,
+				username: .username
+			} else null end)
+		}
+	' | "$SECRETS_BIN" stage-batch "$base_ref")"; then
+		fail_json "failed to stage protected credentials"
+	fi
+	case "$ref" in
+		''|*[!A-Za-z0-9_.-]*) fail_json "invalid protected credential reference" ;;
 	esac
-	printf '%s\n' '{"code":0}'
+	"$JQ_BIN" -nc --arg ref "$ref" '{code:0,ref:$ref}'
 }
 
 case "${1:-}" in
@@ -151,8 +168,8 @@ case "${1:-}" in
 				parse_request
 				run_preflight
 				;;
-			set_secret)
-				run_set_secret
+			set_secrets)
+				run_set_secrets
 				;;
 			*) exit 1 ;;
 		esac

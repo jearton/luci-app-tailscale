@@ -524,6 +524,18 @@ msgstr ""
 msgid "Only enable when all status checks pass."
 msgstr ""
 
+msgid "Re-enter the AdGuard password after changing the API URL or username."
+msgstr ""
+
+msgid "Save error"
+msgstr ""
+
+msgid "An error occurred while saving the form:"
+msgstr ""
+
+msgid "Failed to stage protected credentials."
+msgstr ""
+
 msgid "Health Check Domain is required before enabling AdGuard DNS auto switch."
 msgstr ""
 
