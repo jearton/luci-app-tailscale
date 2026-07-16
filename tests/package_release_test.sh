@@ -70,8 +70,62 @@ assert_no_active_config_list() {
 	fi
 }
 
+assert_release_permissions() {
+	file="$1"
+	awk '
+		/^permissions:$/ {
+			global_permissions = 1
+			next
+		}
+		global_permissions && /^  contents: / {
+			global_contents = $2
+			if ($2 == "write") {
+				write_count++
+				write_outside_release = 1
+			}
+			global_permissions = 0
+			next
+		}
+		/^jobs:$/ {
+			in_jobs = 1
+			next
+		}
+		in_jobs && /^  [A-Za-z0-9_-]+:$/ {
+			job = $1
+			sub(/:$/, "", job)
+			job_permissions = 0
+			next
+		}
+		in_jobs && /^    permissions:$/ {
+			job_permissions = 1
+			next
+		}
+		in_jobs && job_permissions && /^      contents: / {
+			job_contents[job] = $2
+			if ($2 == "write") {
+				write_count++
+				if (job != "release")
+					write_outside_release = 1
+			}
+			job_permissions = 0
+			next
+		}
+		END {
+			if (global_contents != "read")
+				exit 1
+			if (job_contents["release"] != "write")
+				exit 1
+			if (job_contents["test"] == "write" || job_contents["build"] == "write")
+				exit 1
+			if (write_count != 1 || write_outside_release)
+				exit 1
+		}
+	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
+}
+
 assert_contains "PKG_VERSION:=1.2.7" Makefile
 assert_file .github/workflows/release.yml
+assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
 assert_contains "v*" .github/workflows/release.yml
 assert_contains "pull_request:" .github/workflows/release.yml

@@ -145,7 +145,13 @@ case "$*" in
 		done
 		[ -n "$body" ] && cat "$body" >"${TEST_UPSTREAM_JSON:?}"
 		[ "${CURL_TEST_UPSTREAM_FAIL:-0}" = "1" ] && exit 1
-		echo OK
+		if [ -n "${CURL_TEST_UPSTREAM_RESPONSE:-}" ]; then
+			printf '%s\n' "$CURL_TEST_UPSTREAM_RESPONSE"
+		else
+			cat <<'JSON'
+{"[/lan/]127.0.0.1:5353":"OK","9.9.9.9":"OK","149.112.112.112":"OK"}
+JSON
+		fi
 		;;
 	*"/control/cache_clear"*)
 		[ "${CURL_CACHE_CLEAR_FAIL:-0}" = "1" ] && exit 1
@@ -292,6 +298,13 @@ test_preflight_requires_api_post_test() {
 	assert_contains "--rawfile upstreams" "$(cat "$JQ_LOG")" "preflight API payload should be built from the validated upstream file with jq"
 }
 
+test_preflight_rejects_upstream_error_response() {
+	out="$(CURL_TEST_UPSTREAM_RESPONSE='{"[/lan/]127.0.0.1:5353":"OK","9.9.9.9":"upstream timeout","149.112.112.112":"OK"}' run_script --preflight || true)"
+
+	assert_contains "adguard_api=fail" "$out" "preflight should fail the AdGuard API check when an upstream test reports an error"
+	assert_contains "ready=fail" "$out" "preflight should not be ready when an upstream test reports an error"
+}
+
 test_preflight_requires_configured_default_upstream() {
 	: >"$LOGGER_LOG"
 	out="$(UCI_EMPTY_DEFAULT_UPSTREAMS=1 run_script --preflight || true)"
@@ -351,6 +364,21 @@ test_run_loop_applies_down_profile_when_initial_health_fails() {
 	assert_contains "1" "$(cat "$SLEEP_LOG")" "run loop should continue after applying the down profile"
 }
 
+test_run_loop_runs_static_preflight_once_before_health_polling() {
+	rm -rf "$STATE_DIR"
+	mkdir -p "$STATE_DIR"
+	: >"$CURL_LOG"
+	: >"$NSLOOKUP_LOG"
+	: >"$SLEEP_LOG"
+	printf 'up\n' >"$STATE_DIR/current_profile"
+	printf '0\n' >"$SLEEP_COUNT_FILE"
+
+	SLEEP_MAX_CALLS=3 UCI_CHECK_INTERVAL=1 run_script --run >/dev/null 2>&1 || true
+
+	assert_occurrences 1 "/control/test_upstream_dns" "$CURL_LOG" "static AdGuard API preflight should run only once after it succeeds"
+	assert_occurrences 3 "service.example.test 100.100.100.100" "$NSLOOKUP_LOG" "health polling should continue after static preflight succeeds"
+}
+
 test_run_loop_retries_static_preflight_failures_without_exit_churn() {
 	rm -rf "$STATE_DIR"
 	mkdir -p "$STATE_DIR"
@@ -400,11 +428,13 @@ test_profile_generation
 test_health_check
 test_preflight_reports_failures
 test_preflight_requires_api_post_test
+test_preflight_rejects_upstream_error_response
 test_preflight_requires_configured_default_upstream
 test_preflight_does_not_require_accept_dns
 test_apply_profile_preserves_dns_info
 test_empty_profile_does_not_write_dns_config
 test_run_loop_applies_down_profile_when_initial_health_fails
+test_run_loop_runs_static_preflight_once_before_health_polling
 test_run_loop_retries_static_preflight_failures_without_exit_churn
 test_profile_failures_are_rate_limited_by_signature
 

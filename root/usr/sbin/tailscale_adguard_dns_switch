@@ -198,6 +198,7 @@ curl_post_json() {
 check_adguard_api() {
 	mkdir -p "$STATE_DIR"
 	api_check_body="$STATE_DIR/preflight_test_upstream_dns.json"
+	api_check_response="$STATE_DIR/preflight_test_upstream_dns_response.json"
 	api_check_upstreams="$STATE_DIR/preflight_default_upstreams.txt"
 
 	curl_get "/control/status" >/dev/null || return 1
@@ -212,7 +213,10 @@ check_adguard_api() {
 		log_rate_limited daemon.err api_preflight_payload "failed to build AdGuard API preflight payload"
 		return 1
 	}
-	curl_post_json "/control/test_upstream_dns" "$api_check_body" >/dev/null || return 1
+	curl_post_json "/control/test_upstream_dns" "$api_check_body" >"$api_check_response" || return 1
+	"$JQ_CMD" -e '
+		type == "object" and length > 0 and all(.[]; . == "OK")
+	' "$api_check_response" >/dev/null || return 1
 }
 
 json_replace_upstreams() {
@@ -404,12 +408,15 @@ run_loop() {
 	failure_count=0
 
 	while :; do
-		if ! static_failures="$(startup_preflight)"; then
-			log_rate_limited daemon.err "static_preflight_$static_failures" "AdGuard DNS static preflight failed: $static_failures"
-			"$SLEEP_CMD" "$interval"
-			continue
+		if static_failures="$(startup_preflight)"; then
+			break
 		fi
 
+		log_rate_limited daemon.err "static_preflight_$static_failures" "AdGuard DNS static preflight failed: $static_failures"
+		"$SLEEP_CMD" "$interval"
+	done
+
+	while :; do
 		current="$(cat "$STATE_DIR/current_profile" 2>/dev/null || true)"
 		desired="$current"
 
