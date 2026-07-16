@@ -6,15 +6,20 @@
 				"/sbin/ip -s -j ad": [ "exec" ],
 				"/sbin/logread -e tailscale": [ "exec" ],
 				"/usr/sbin/tailscale status --json": [ "exec" ],
+				"/usr/sbin/tailscale_peer_probe": [ "exec" ],
 				"/usr/sbin/tailscale login": [ "exec" ],
 				"/usr/sbin/tailscale logout": [ "exec" ]
 			},
 			"ubus": {
+				"luci.tailscale": [ "secret_status" ],
 				"service": [ "list" ]
 			},
 			"uci": [ "tailscale" ]
 		},
 		"write": {
+			"ubus": {
+				"luci.tailscale": [ "adguard_preflight", "set_secrets" ]
+			},
 			"uci": [ "tailscale" ]
 		}
 	}

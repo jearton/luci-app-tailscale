@@ -1,0 +1,221 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Behavior and syntax tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Verify release tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(sed -n 's/^PKG_VERSION:=//p' Makefile)"
+          expected_tag="v${package_version}"
+          if [[ -z "$package_version" || "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "release tag $GITHUB_REF_NAME does not match package version $expected_tag" >&2
+            exit 1
+          fi
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext jq
+
+      - name: Run behavior tests
+        run: |
+          set -eu
+          for test in tests/*_test.sh; do
+            sh "$test"
+          done
+          for test in tests/*_test.js; do
+            node "$test"
+          done
+
+      - name: Check shell and JavaScript syntax
+        run: |
+          set -eu
+          for file in .github/scripts/*.sh; do
+            bash -n "$file"
+          done
+          for file in root/etc/init.d/tailscale root/etc/hotplug.d/iface/* root/etc/uci-defaults/* root/usr/libexec/rpcd/* root/usr/sbin/tailscale_* tests/*_test.sh; do
+            sh -n "$file"
+          done
+          for file in htdocs/luci-static/resources/view/tailscale/*.js tests/*_test.js; do
+            node --check "$file"
+          done
+
+      - name: Check JSON and translations
+        run: |
+          set -eu
+          for file in root/usr/share/luci/menu.d/*.json root/usr/share/rpcd/acl.d/*.json; do
+            jq -e . "$file" >/dev/null
+          done
+          for file in po/templates/*.pot po/*/*.po; do
+            msgfmt --check-format -o /dev/null "$file"
+          done
+
+  build:
+    name: Build ${{ matrix.package_format }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_format: ipk
+            sdk_arch: x86_64-24.10.5@sha256:df46cd5d68013d737a1cf45725108dc9f33e28ae6d3de48ad05ef8b81b7cbf35
+            artifact_glob: "*.ipk"
+          - package_format: apk
+            sdk_arch: x86_64@sha256:95cc0c395223b70ab37e6bba3d8e9e45dbcfdd0295fae93eaff7fadab876522b
+            artifact_glob: "*.apk"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          path: luci-app-tailscale
+
+      - name: Build package
+        shell: bash
+        env:
+          SDK_IMAGE: ghcr.io/openwrt/sdk:${{ matrix.sdk_arch }}
+          PACKAGE_FEED_DIR: ${{ github.workspace }}/luci-app-tailscale
+          ARTIFACTS_DIR: ${{ github.workspace }}
+          BUILD_LOG: "1"
+          PACKAGE_NAME: luci-app-tailscale
+          V: s
+        run: bash luci-app-tailscale/.github/scripts/build-openwrt-package.sh
+
+      - name: Write build failure summary
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## OpenWrt build diagnostics"
+            echo
+            log_file=""
+            if [[ -d logs ]]; then
+              log_file="$(find logs -type f -path '*luci-app-tailscale*' | sort | tail -n 1)"
+            fi
+            if [[ -n "$log_file" ]]; then
+              echo "Last 200 lines from \`$log_file\`:"
+              echo
+              echo '```text'
+              tail -n 200 "$log_file"
+              echo '```'
+            else
+              echo "The SDK did not produce a luci-app-tailscale build log."
+              echo "The failure occurred before or outside package compilation; inspect the failed Build package step."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: luci-app-tailscale-${{ matrix.package_format }}-diagnostics
+          path: |
+            logs/**
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Collect package artifacts
+        run: |
+          set -eu
+          mkdir -p artifacts
+          find bin/packages -type f \( \
+            -name 'luci-app-tailscale_*.ipk' -o \
+            -name 'luci-i18n-tailscale-zh-cn_*.ipk' -o \
+            -name 'luci-i18n-tailscale-zh-tw_*.ipk' -o \
+            -name 'luci-app-tailscale-*.apk' -o \
+            -name 'luci-i18n-tailscale-zh-cn-*.apk' -o \
+            -name 'luci-i18n-tailscale-zh-tw-*.apk' \
+          \) -exec cp {} artifacts/ \;
+          ls -l artifacts
+          require_artifact() {
+            pattern="$1"
+            count="$(find artifacts -maxdepth 1 -type f -name "$pattern" | wc -l | tr -d ' ')"
+            if [[ "$count" -ne 1 ]]; then
+              echo "expected exactly one artifact matching $pattern, found $count" >&2
+              exit 1
+            fi
+          }
+          case '${{ matrix.package_format }}' in
+            ipk)
+              require_artifact 'luci-app-tailscale_*.ipk'
+              require_artifact 'luci-i18n-tailscale-zh-cn_*.ipk'
+              require_artifact 'luci-i18n-tailscale-zh-tw_*.ipk'
+              ;;
+            apk)
+              require_artifact 'luci-app-tailscale-*.apk'
+              require_artifact 'luci-i18n-tailscale-zh-cn-*.apk'
+              require_artifact 'luci-i18n-tailscale-zh-tw-*.apk'
+              ;;
+            *)
+              echo 'unsupported package format' >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: luci-app-tailscale-${{ matrix.package_format }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          files: |
+            artifacts/**/*.ipk
+            artifacts/**/*.apk
+          body: |
+            ## Usage
+
+            Upload the prebuilt ipk or apk package to the `/tmp` directory of OpenWrt.
+
+            ### opkg package manager
+
+            ```sh
+            opkg update
+            opkg install --force-overwrite /tmp/luci-*-tailscale*.ipk
+            ```
+
+            ### apk package manager
+
+            ```sh
+            apk update
+            apk add --allow-untrusted --force-overwrite /tmp/luci-*-tailscale*.apk
+            ```
