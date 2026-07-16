@@ -276,13 +276,17 @@ function getFirewallZones() {
 
 return view.extend({
 	load() {
-		return Promise.all([
-			uci.load('tailscale'),
-			uci.load('firewall'),
-			getStatus(),
-			getInterfaceSubnets(),
-			callSecretStatus()
-		]);
+		return callSecretStatus().then(function(secretStatus) {
+			return Promise.all([
+				uci.load('tailscale'),
+				uci.load('firewall'),
+				getStatus(),
+				getInterfaceSubnets()
+			]).then(function(data) {
+				data.push(secretStatus);
+				return data;
+			});
+		});
 	},
 
 	render(data) {

@@ -33,6 +33,7 @@ case "${1:-}" in
 	set-authkey|set-adguard)
 		cat >"${SECRETS_STDIN_LOG:?}"
 		;;
+	migrate) ;;
 	*) exit 1 ;;
 esac
 SH
@@ -73,6 +74,7 @@ printf '%s' "$list_json" | jq -e '.secret_status == {} and .set_secret.name == "
 status_response="$(printf '%s\n' '{}' | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call secret_status)"
 printf '%s' "$status_response" | jq -e '.authkey_set == "1" and .adguard_password_set == "1"' >/dev/null || \
 	fail "secret status must expose booleans without returning secret values"
+grep -Fx 'migrate' "$SECRETS_ARGV_LOG" >/dev/null || fail "secret status must migrate readable legacy credentials before reporting status"
 
 request='{"candidate":"1","api_url":"http://candidate.example:3000","username":"candidate-user","password_set":"1","password":"candidate-secret","default_upstreams":"1.1.1.1\\n8.8.8.8","tailnet_upstreams":"[/candidate.example/]100.100.100.100","health_domain":"candidate-health.example","expected_ips":"10.23.0.15\\n10.23.0.16"}'
 response="$(printf '%s\n' "$request" | PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call adguard_preflight)"

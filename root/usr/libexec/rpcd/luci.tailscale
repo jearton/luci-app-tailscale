@@ -101,6 +101,7 @@ run_preflight() {
 }
 
 run_secret_status() {
+	"$SECRETS_BIN" migrate >/dev/null 2>&1 || fail_json "failed to migrate protected credentials"
 	authkey_set=0
 	adguard_password_set=0
 	"$SECRETS_BIN" has authkey >/dev/null 2>&1 && authkey_set=1
