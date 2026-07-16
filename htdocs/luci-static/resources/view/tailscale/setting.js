@@ -225,7 +225,7 @@ function adguardBindingChanged(candidate, persisted) {
 
 function buildSecretUpdateRequest(values) {
 	const authkey = String(values.authkey || '').trim();
-	const adguardPassword = String(values.adguardPassword || '').trim();
+	const adguardPassword = values.adguardPassword == null ? '' : String(values.adguardPassword);
 	return {
 		authkey_set: authkey ? '1' : '0',
 		authkey: authkey,
@@ -310,7 +310,7 @@ async function writeAdguardDnsSwitchEnabled(section_id, value, candidateRequest,
 	);
 
 	if (shouldPreflight) {
-		if (persistedEnabled && adguardBindingChanged(candidateRequest, persistedRequest) && !String(candidateRequest.password || '').trim())
+		if (persistedEnabled && adguardBindingChanged(candidateRequest, persistedRequest) && !String(candidateRequest.password || ''))
 			throw new Error(_('Re-enter the AdGuard password after changing the API URL or username.'));
 		const status = await fetchAdguardPreflightStatus(candidateRequest);
 		if (status.ready !== 'pass')
@@ -700,7 +700,7 @@ return view.extend({
 		o.default = o.disabled;
 		o.rmempty = false;
 		o.write = function(section_id, value) {
-			const password = String(adguardPasswordOption.formvalue(section_id) || '').trim();
+			const password = String(adguardPasswordOption.formvalue(section_id) || '');
 			const candidateRequest = buildAdguardPreflightRequest({
 				apiUrl: String(adguardApiUrlOption.formvalue(section_id) || '').trim(),
 				username: String(adguardUsernameOption.formvalue(section_id) || '').trim(),

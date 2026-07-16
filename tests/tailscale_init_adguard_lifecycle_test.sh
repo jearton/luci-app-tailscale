@@ -21,6 +21,7 @@ mkdir -p "$TMP_DIR"
 cat >"$TMP_DIR/fake-adguard" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${FAKE_ADGUARD_LOG:?}"
+[ "${FAKE_ADGUARD_FAIL:-0}" = "0" ]
 SH
 chmod +x "$TMP_DIR/fake-adguard"
 
@@ -40,6 +41,7 @@ chmod +x "$TMP_DIR/fake-secrets"
 run_apply_down() {
 	switch_enabled="$1"
 	state_profile="${2:-}"
+	fail_mode="${3:-0}"
 	FAKE_ADGUARD_LOG="$TMP_DIR/adguard.log"
 	ADGUARD_DNS_STATE_DIR="$TMP_DIR/state"
 	: >"$FAKE_ADGUARD_LOG"
@@ -48,8 +50,10 @@ run_apply_down() {
 		mkdir -p "$ADGUARD_DNS_STATE_DIR"
 		printf '%s\n' "$state_profile" >"$ADGUARD_DNS_STATE_DIR/current_profile"
 	fi
-	export FAKE_ADGUARD_LOG ADGUARD_DNS_STATE_DIR
+	FAKE_ADGUARD_FAIL="$fail_mode"
+	export FAKE_ADGUARD_LOG FAKE_ADGUARD_FAIL ADGUARD_DNS_STATE_DIR
 
+	rc=0
 	(
 		. "$INIT_SCRIPT"
 		PROGA="$TMP_DIR/fake-adguard"
@@ -70,9 +74,29 @@ run_apply_down() {
 		}
 
 		tailscale_adguard_dns_apply_down settings
-	)
+	) || rc=$?
 
 	cat "$FAKE_ADGUARD_LOG"
+	return "$rc"
+}
+
+run_reload_service() {
+	start_result="${1:-0}"
+	RELOAD_LOG="$TMP_DIR/reload.log"
+	: >"$RELOAD_LOG"
+	export RELOAD_LOG
+
+	(
+		. "$INIT_SCRIPT"
+		stop() {
+			printf 'stop:%s\n' "${TAILSCALE_INTERNAL_RELOAD:-0}" >>"$RELOAD_LOG"
+		}
+		start() {
+			printf 'start\n' >>"$RELOAD_LOG"
+			return "$start_result"
+		}
+		reload_service
+	)
 }
 
 run_disabled_start() {
@@ -126,7 +150,8 @@ run_stop_instance() {
 	printf 'up\n' >"$ADGUARD_DNS_STATE_DIR/current_profile"
 	printf 'recovery-state\n' >"$CONFIG_DIR/exit_node_firewall_state"
 	FAKE_HELPER_FAIL_ARG="$helper_fail_arg"
-	export FAKE_ADGUARD_LOG FAKE_HELPER_LOG FAKE_HELPER_FAIL_ARG ADGUARD_DNS_STATE_DIR CONFIG_DIR UCI_CHANGES_OUT TAILSCALE_STATUS_OUT TAILSCALED_CLEANUP_LOG
+	FAKE_ADGUARD_FAIL=0
+	export FAKE_ADGUARD_LOG FAKE_ADGUARD_FAIL FAKE_HELPER_LOG FAKE_HELPER_FAIL_ARG ADGUARD_DNS_STATE_DIR CONFIG_DIR UCI_CHANGES_OUT TAILSCALE_STATUS_OUT TAILSCALED_CLEANUP_LOG
 
 	(
 		. "$INIT_SCRIPT"
@@ -206,7 +231,8 @@ run_service_stopped() {
 	rm -rf "$ADGUARD_DNS_STATE_DIR"
 	mkdir -p "$ADGUARD_DNS_STATE_DIR"
 	printf 'up\n' >"$ADGUARD_DNS_STATE_DIR/current_profile"
-	export FAKE_ADGUARD_LOG ADGUARD_DNS_STATE_DIR
+	FAKE_ADGUARD_FAIL=0
+	export FAKE_ADGUARD_LOG FAKE_ADGUARD_FAIL ADGUARD_DNS_STATE_DIR
 
 	(
 		. "$INIT_SCRIPT"
@@ -256,6 +282,22 @@ actual: $enabled_output"
 disabled_with_managed_profile_output="$(run_apply_down 0 up)"
 [ "$disabled_with_managed_profile_output" = "--apply-profile down" ] || fail "disabling a managed AdGuard DNS switch should restore the down profile
 actual: $disabled_with_managed_profile_output"
+
+if run_apply_down 0 up 1 >/dev/null; then
+	fail "failed AdGuard down-profile restoration must propagate through the stop lifecycle"
+fi
+
+run_reload_service 0
+[ "$(cat "$TMP_DIR/reload.log")" = "stop:1
+start" ] || fail "successful reload must use one internal stop followed by start"
+
+if run_reload_service 1; then
+	fail "reload must fail when restart fails"
+fi
+[ "$(cat "$TMP_DIR/reload.log")" = "stop:1
+start
+stop:0" ] || fail "failed reload start must execute a final stop that removes persistent firewall state
+actual: $(cat "$TMP_DIR/reload.log")"
 
 disabled_helper_output="$(run_disabled_start)"
 [ "$disabled_helper_output" = "--cleanup-managed-firewall" ] || fail "disabled start should invoke complete managed firewall cleanup

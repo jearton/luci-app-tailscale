@@ -236,6 +236,11 @@ async function testEnablementWrite({ persistedEnabled, value, preflightResult, p
 		adguardUsername: 'root'
 	});
 	assert(secretRequest.authkey_set === '1' && secretRequest.adguard_password_set === '1', 'one atomic request must carry both changed credentials');
+	const spacedPasswordRequest = atomicContext.module.exports.buildSecretUpdateRequest({
+		adguardPassword: '  password with spaces  '
+	});
+	assert(spacedPasswordRequest.adguard_password === '  password with spaces  ', 'AdGuard passwords must preserve leading and trailing spaces');
+	assert(!source.includes("String(adguardPasswordOption.formvalue(section_id) || '').trim()"), 'live AdGuard password input must not be trimmed before preflight');
 	assert(source.includes("uci.set('tailscale', 'settings', 'secrets_ref'"), 'staged credentials must be activated through a UCI-managed version reference');
 	assert(source.includes('saveInFlight'), 'concurrent Save and Save & Apply actions must share one in-flight save transaction');
 

@@ -51,6 +51,9 @@ jobs:
       - name: Check shell and JavaScript syntax
         run: |
           set -eu
+          for file in .github/scripts/*.sh; do
+            bash -n "$file"
+          done
           for file in root/etc/init.d/tailscale root/etc/hotplug.d/iface/* root/etc/uci-defaults/* root/usr/libexec/rpcd/* root/usr/sbin/tailscale_* tests/*_test.sh; do
             sh -n "$file"
           done
@@ -90,12 +93,15 @@ jobs:
           path: luci-app-tailscale
 
       - name: Build package
-        uses: openwrt/gh-action-sdk@b8cc97d1072dedff455e2945a73fc43f5c7e1749 # v9
+        shell: bash
         env:
-          ARCH: ${{ matrix.sdk_arch }}
+          SDK_IMAGE: ghcr.io/openwrt/sdk:${{ matrix.sdk_arch }}
+          PACKAGE_FEED_DIR: ${{ github.workspace }}/luci-app-tailscale
+          ARTIFACTS_DIR: ${{ github.workspace }}
           BUILD_LOG: "1"
-          PACKAGES: luci-app-tailscale
+          PACKAGE_NAME: luci-app-tailscale
           V: s
+        run: bash luci-app-tailscale/.github/scripts/build-openwrt-package.sh
 
       - name: Write build failure summary
         if: failure()

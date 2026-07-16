@@ -424,6 +424,24 @@ test_apply_profile_preserves_dns_info() {
 	assert_contains "-x 9" "$(cat "$FLOCK_LOG")" "profile application must acquire an exclusive lock"
 }
 
+test_down_profile_uses_saved_snapshot_when_config_is_cleared() {
+	rm -rf "$STATE_DIR"
+	mkdir -p "$STATE_DIR"
+	run_script --apply-profile up
+
+	[ -s "$STATE_DIR/down_profile" ] || fail "switching up must persist a recoverable down profile"
+	: >"$CURL_LOG"
+	rm -f "$POSTED_JSON"
+	if ! UCI_EMPTY_DEFAULT_UPSTREAMS=1 run_script --apply-profile down; then
+		fail "saved down-profile recovery failed
+logger: $(cat "$LOGGER_LOG")
+curl: $(cat "$CURL_LOG")"
+	fi
+
+	assert_contains '"upstream_dns":["[/lan/]127.0.0.1:5353","9.9.9.9","149.112.112.112"]' "$(cat "$POSTED_JSON")" "a saved down profile must restore public DNS after the new UCI defaults are cleared"
+	assert_eq "down" "$(cat "$STATE_DIR/current_profile")" "successful recovery must record the down profile"
+}
+
 test_apply_profile_fails_when_lock_is_unavailable() {
 	: >"$CURL_LOG"
 	if FLOCK_FAIL=1 run_script --apply-profile up >/dev/null 2>&1; then
@@ -549,6 +567,7 @@ test_preflight_does_not_require_accept_dns
 test_preflight_uses_candidate_configuration
 test_persisted_password_is_bound_to_saved_endpoint
 test_apply_profile_preserves_dns_info
+test_down_profile_uses_saved_snapshot_when_config_is_cleared
 test_apply_profile_fails_when_lock_is_unavailable
 test_symlink_state_directory_is_rejected
 test_empty_profile_does_not_write_dns_config

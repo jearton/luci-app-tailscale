@@ -175,16 +175,17 @@ tailscale_adguard_dns() {
 
 tailscale_adguard_dns_apply_down() {
 	local cfg="$1"
-	local adguard_dns_switch_enabled adguard_default_upstreams adguard_current_profile
+	local adguard_dns_switch_enabled adguard_current_profile
 
 	config_get_bool adguard_dns_switch_enabled "$cfg" 'adguard_dns_switch_enabled' 0
 	adguard_current_profile="$(cat "$ADGUARD_DNS_STATE_DIR/current_profile" 2>/dev/null || true)"
+	[ "$adguard_current_profile" != "down" ] || return 0
 	[ "$adguard_dns_switch_enabled" = "1" ] || [ "$adguard_current_profile" = "up" ] || return 0
 
-	config_get adguard_default_upstreams "$cfg" 'adguard_default_upstreams'
-	[ -n "$adguard_default_upstreams" ] || return 0
-
-	"$PROGA" --apply-profile down >/dev/null 2>&1 || true
+	"$PROGA" --apply-profile down >/dev/null 2>&1 || {
+		logger -p daemon.err -t tailscale_adguard_dns "failed to restore AdGuard DNS down profile"
+		return 1
+	}
 }
 
 start_instance() {
@@ -297,6 +298,9 @@ reload_service() {
 	TAILSCALE_INTERNAL_RELOAD=1
 	stop || reload_status=1
 	TAILSCALE_INTERNAL_RELOAD=0
-	start || reload_status=1
+	if ! start; then
+		reload_status=1
+		stop || reload_status=1
+	fi
 	return "$reload_status"
 }

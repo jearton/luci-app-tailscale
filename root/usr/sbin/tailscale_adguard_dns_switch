@@ -194,7 +194,7 @@ default_plain_without_tailnet_dns() {
 }
 
 profile_lines() {
-	profile="$1"
+	local profile="$1"
 
 	case "$profile" in
 		up)
@@ -349,8 +349,8 @@ profile_is_empty() {
 }
 
 validate_profile_file() {
-	profile="$1"
-	upstream_file="$2"
+	local profile="$1"
+	local upstream_file="$2"
 
 	if profile_is_empty "$upstream_file"; then
 		log_rate_limited daemon.err "profile_empty_$profile" "generated AdGuard DNS $profile profile is empty"
@@ -374,8 +374,9 @@ apply_profile_locked() (
 	dns_info=
 	body=
 	upstreams=
+	down_snapshot=
 	cleanup_profile_files() {
-		for cleanup_file in "$dns_info" "$body" "$upstreams"; do
+		for cleanup_file in "$dns_info" "$body" "$upstreams" "$down_snapshot"; do
 			[ -z "$cleanup_file" ] || rm -f "$cleanup_file"
 		done
 	}
@@ -388,7 +389,18 @@ apply_profile_locked() (
 		log_rate_limited daemon.err "profile_generate_$profile" "failed to generate AdGuard DNS $profile profile"
 		return 1
 	}
+	if [ "$profile" = "down" ] && profile_is_empty "$upstreams" && \
+	   [ "$(cat "$STATE_DIR/current_profile" 2>/dev/null || true)" = "up" ] && \
+	   [ -s "$STATE_DIR/down_profile" ]; then
+		cat "$STATE_DIR/down_profile" >"$upstreams" || return 1
+	fi
 	validate_profile_file "$profile" "$upstreams" || return 1
+	if [ "$profile" = "up" ]; then
+		down_snapshot="$(state_temp_file down-profile)" || return 1
+		profile_lines down >"$down_snapshot" || return 1
+		validate_profile_file down "$down_snapshot" || return 1
+		cat "$down_snapshot" | write_state_atomic "$STATE_DIR/down_profile" || return 1
+	fi
 
 	curl_get "/control/dns_info" >"$dns_info" || {
 		log_rate_limited daemon.err profile_read "failed to read AdGuard DNS config"
