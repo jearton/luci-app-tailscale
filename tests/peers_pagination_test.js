@@ -104,6 +104,11 @@ const normalizedGroups = buildPeerGroups(normalizedPeers);
 assert(normalizedGroups.map(item => item.name).join(',') === 'Alpha User,Unknown user,Zeta User', 'peer groups should sort by normalized user display name');
 assert(normalizedGroups[0].peers[0].id === 'node:gateway', 'peer grouping should retain the normalized user association');
 
+const largeUserId = '9007199254740993';
+const largeIdPeers = parseStatus(`{"User":{"${largeUserId}":{"DisplayName":"Large ID User"}},"Peer":{"node:large":{"HostName":"large-id-peer","TailscaleIPs":["100.64.0.99"],"UserID":${largeUserId},"Online":true}}}`);
+assert(largeIdPeers[0].userKey === largeUserId, 'status parsing must preserve UserID values larger than JavaScript safe integers');
+assert(largeIdPeers[0].userName === 'Large ID User', 'large UserID values must still resolve the correct user metadata');
+
 const derpProbe = parseProbeResult('{"ok":true,"path":"derp","relay":"test-relay","summary":"DERP test-relay 24 ms"}', 'ignored');
 assert(derpProbe.path === 'derp' && derpProbe.relay === 'test-relay', 'probe parser should preserve a valid DERP result');
 const progressiveProbe = appendProbeSummary(derpProbe, 'Continuing probe 1/5');

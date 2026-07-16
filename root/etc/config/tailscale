@@ -61,11 +61,8 @@ config tailscale 'settings'
 	# AdGuard Home API endpoint and optional credentials
 	option adguard_api_url 'http://127.0.0.1:3000'
 	#option adguard_username ''
-	#option adguard_password ''
 	# Set extra flags for enabling settings upon the initiation of Tailscale
 	# Documentation https://tailscale.com/kb/1241/tailscale-up
 	#list flags ''
 	# Provide the base URL of a custom server instead of https://controlplane.tailscale.com
 	#option login_server ''
-	# Set auth Key of custom server
-	#option authkey ''

@@ -37,6 +37,21 @@ const callAdguardPreflight = rpc.declare({
 	reject: true
 });
 
+const callSecretStatus = rpc.declare({
+	object: 'luci.tailscale',
+	method: 'secret_status',
+	expect: { '': {} },
+	reject: true
+});
+
+const callSetSecret = rpc.declare({
+	object: 'luci.tailscale',
+	method: 'set_secret',
+	params: ['name', 'value', 'api_url', 'username'],
+	expect: { '': {} },
+	reject: true
+});
+
 const ADGUARD_PREFLIGHT_CHECKS = [
 	{ key: 'adguard_process', label: _('AdGuard process') },
 	{ key: 'port_53_adguard', label: _('Port 53 is AdGuard') },
@@ -265,7 +280,8 @@ return view.extend({
 			uci.load('tailscale'),
 			uci.load('firewall'),
 			getStatus(),
-			getInterfaceSubnets()
+			getInterfaceSubnets(),
+			callSecretStatus()
 		]);
 	},
 
@@ -276,9 +292,10 @@ return view.extend({
 		const firewallZones = getFirewallZones();
 		const onlineExitNodes = statusData.onlineExitNodes;
 		const peers = statusData.peers;
-		const hasAuthKey = !!uci.get('tailscale', 'settings', 'authkey');
+		const secretStatus = data[4] || {};
+		const hasAuthKey = secretStatus.authkey_set === '1';
 		const savedKeepalivePeers = toList(uci.get('tailscale', 'settings', 'keepalive_peers'));
-		const hasAdguardPassword = !!uci.get('tailscale', 'settings', 'adguard_password');
+		const hasAdguardPassword = secretStatus.adguard_password_set === '1';
 
 		m = new form.Map('tailscale', _('Tailscale'), _('Tailscale is a cross-platform and easy to use virtual LAN.'));
 
@@ -573,7 +590,12 @@ return view.extend({
 		adguardPasswordOption.write = function(section_id, value) {
 			value = (value || '').trim();
 			if (value)
-				return uci.set('tailscale', section_id, 'adguard_password', value);
+				return callSetSecret(
+					'adguard_password',
+					value,
+					String(adguardApiUrlOption.formvalue(section_id) || '').trim(),
+					String(adguardUsernameOption.formvalue(section_id) || '').trim()
+				);
 		};
 		adguardPasswordOption.remove = function() {};
 
@@ -685,7 +707,7 @@ return view.extend({
 		o.write = function(section_id, value) {
 			value = (value || '').trim();
 			if (value)
-				return uci.set('tailscale', section_id, 'authkey', value);
+				return callSetSecret('authkey', value, '', '');
 		};
 		o.remove = function() {};
 

@@ -19,7 +19,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Verify release tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(sed -n 's/^PKG_VERSION:=//p' Makefile)"
+          expected_tag="v${package_version}"
+          if [[ -z "$package_version" || "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "release tag $GITHUB_REF_NAME does not match package version $expected_tag" >&2
+            exit 1
+          fi
 
       - name: Install test dependencies
         run: |
@@ -73,12 +85,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           path: luci-app-tailscale
 
       - name: Build package
-        uses: openwrt/gh-action-sdk@v9
+        uses: openwrt/gh-action-sdk@b8cc97d1072dedff455e2945a73fc43f5c7e1749 # v9
         env:
           ARCH: ${{ matrix.sdk_arch }}
           BUILD_LOG: "1"
@@ -110,7 +122,7 @@ jobs:
 
       - name: Upload build diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: luci-app-tailscale-${{ matrix.package_format }}-diagnostics
           path: |
@@ -131,13 +143,37 @@ jobs:
             -name 'luci-i18n-tailscale-zh-tw-*.apk' \
           \) -exec cp {} artifacts/ \;
           ls -l artifacts
-          find artifacts -type f -name '${{ matrix.artifact_glob }}' | grep -q .
+          require_artifact() {
+            pattern="$1"
+            count="$(find artifacts -maxdepth 1 -type f -name "$pattern" | wc -l | tr -d ' ')"
+            if [[ "$count" -ne 1 ]]; then
+              echo "expected exactly one artifact matching $pattern, found $count" >&2
+              exit 1
+            fi
+          }
+          case '${{ matrix.package_format }}' in
+            ipk)
+              require_artifact 'luci-app-tailscale_*.ipk'
+              require_artifact 'luci-i18n-tailscale-zh-cn_*.ipk'
+              require_artifact 'luci-i18n-tailscale-zh-tw_*.ipk'
+              ;;
+            apk)
+              require_artifact 'luci-app-tailscale-*.apk'
+              require_artifact 'luci-i18n-tailscale-zh-cn-*.apk'
+              require_artifact 'luci-i18n-tailscale-zh-tw-*.apk'
+              ;;
+            *)
+              echo 'unsupported package format' >&2
+              exit 1
+              ;;
+          esac
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: luci-app-tailscale-${{ matrix.package_format }}
           path: artifacts/*
+          if-no-files-found: error
 
   release:
     name: Publish GitHub Release
@@ -149,12 +185,12 @@ jobs:
 
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             artifacts/**/*.ipk

@@ -30,7 +30,8 @@ function formatLastSeen(value) {
 }
 
 function parseStatus(stdout) {
-	var parsed = JSON.parse(String(stdout || '{}'));
+	var losslessJson = String(stdout || '{}').replace(/("UserID"\s*:\s*)(\d+)/g, '$1"$2"');
+	var parsed = JSON.parse(losslessJson);
 	var peerEntries = parsed && parsed.Peer ? parsed.Peer : {};
 	var userEntries = parsed && parsed.User ? parsed.User : {};
 	var peers = [];

@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 UCI_CMD="${UCI_CMD:-uci}"
+SECRETS_BIN="${SECRETS_BIN:-/usr/sbin/tailscale_secrets}"
 CURL_CMD="${CURL_CMD:-curl}"
 FLOCK_CMD="${FLOCK_CMD:-flock}"
 JQ_CMD="${JQ_CMD:-jq}"
@@ -93,6 +94,35 @@ candidate_mode() {
 	[ "${TAILSCALE_ADGUARD_PREFLIGHT_CANDIDATE:-0}" = "1" ]
 }
 
+normalize_api_url() {
+	url="${1:-http://127.0.0.1:3000}"
+	[ -n "$url" ] || url='http://127.0.0.1:3000'
+	while [ "${url%/}" != "$url" ]; do
+		url="${url%/}"
+	done
+	case "$url" in
+		http://?*|https://?*) ;;
+		*) return 1 ;;
+	esac
+	printf '%s\n' "$url"
+}
+
+persisted_uci_get() {
+	"$UCI_CMD" -q get "tailscale.settings.$1" 2>/dev/null || true
+}
+
+protected_adguard_password() {
+	if candidate_mode; then
+		url="${TAILSCALE_ADGUARD_PREFLIGHT_API_URL:-}"
+		user="${TAILSCALE_ADGUARD_PREFLIGHT_USERNAME:-}"
+	else
+		url="$(persisted_uci_get adguard_api_url)"
+		user="$(persisted_uci_get adguard_username)"
+	fi
+	url="$(normalize_api_url "$url")" || return 0
+	"$SECRETS_BIN" adguard-password-for "$url" "$user" 2>/dev/null || true
+}
+
 uci_get() {
 	if candidate_mode; then
 		case "$1" in
@@ -103,12 +133,18 @@ uci_get() {
 					printf '%s\n' "${TAILSCALE_ADGUARD_PREFLIGHT_PASSWORD:-}"
 					return 0
 				fi
+				protected_adguard_password
+				return 0
 				;;
 			adguard_health_domain) printf '%s\n' "${TAILSCALE_ADGUARD_PREFLIGHT_HEALTH_DOMAIN:-}"; return 0 ;;
 		esac
 	fi
+	if [ "$1" = "adguard_password" ]; then
+		protected_adguard_password
+		return 0
+	fi
 
-	"$UCI_CMD" -q get "tailscale.settings.$1" 2>/dev/null || true
+	persisted_uci_get "$1"
 }
 
 uci_get_raw() {
@@ -227,11 +263,7 @@ check_health() {
 
 api_url() {
 	url="$(uci_get adguard_api_url)"
-	if [ -n "$url" ]; then
-		printf '%s\n' "${url%/}"
-	else
-		printf '%s\n' "http://127.0.0.1:3000"
-	fi
+	normalize_api_url "$url"
 }
 
 curl_config_escape() {
@@ -260,14 +292,14 @@ run_curl() (
 
 curl_get() {
 	endpoint="$1"
-	base="$(api_url)"
+	base="$(api_url)" || return 1
 	run_curl -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" "$base$endpoint"
 }
 
 curl_post_json() {
 	endpoint="$1"
 	body_file="$2"
-	base="$(api_url)"
+	base="$(api_url)" || return 1
 	run_curl -fsS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" -H "Content-Type: application/json" -X POST --data-binary "@$body_file" "$base$endpoint"
 }
 

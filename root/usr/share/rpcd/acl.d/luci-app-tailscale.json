@@ -11,12 +11,15 @@
 				"/usr/sbin/tailscale logout": [ "exec" ]
 			},
 			"ubus": {
-				"luci.tailscale": [ "adguard_preflight" ],
+				"luci.tailscale": [ "secret_status" ],
 				"service": [ "list" ]
 			},
 			"uci": [ "tailscale" ]
 		},
 		"write": {
+			"ubus": {
+				"luci.tailscale": [ "adguard_preflight", "set_secret" ]
+			},
 			"uci": [ "tailscale" ]
 		}
 	}

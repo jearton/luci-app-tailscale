@@ -7,6 +7,7 @@ USE_PROCD=1
 PROG=/usr/sbin/tailscale_helper
 PROGK=/usr/sbin/tailscale_keepalive
 PROGA=/usr/sbin/tailscale_adguard_dns_switch
+PROGS=/usr/sbin/tailscale_secrets
 PROGD=/usr/sbin/tailscaled
 CONFIG_PATH=/var/lib/tailscale
 ADGUARD_DNS_STATE_DIR="${ADGUARD_DNS_STATE_DIR:-/var/run/tailscale_adguard_dns_switch}"
@@ -58,7 +59,7 @@ tailscale_helper() {
 	config_get access $cfg 'access'
 	config_get flags $cfg 'flags'
 	config_get login_server $cfg 'login_server'
-	config_get authkey $cfg 'authkey'
+	authkey="$("$PROGS" get authkey 2>/dev/null || true)"
 	config_get_bool std_out $cfg 'log_stdout'
 	config_get_bool std_err $cfg 'log_stderr'
 
@@ -232,6 +233,10 @@ start_instance() {
 }
 
 start_service() {
+	"$PROGS" migrate || {
+		logger -p daemon.err -t tailscale "failed to migrate protected credentials"
+		return 1
+	}
 	config_load 'tailscale'
 	config_foreach start_instance 'tailscale'
 }

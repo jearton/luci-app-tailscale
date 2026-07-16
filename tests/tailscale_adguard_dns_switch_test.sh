@@ -91,6 +91,25 @@ SH
 make_fake_commands() {
 	make_fake_uci
 
+	cat >"$TMP_DIR/secrets" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${SECRETS_LOG:?}"
+case "${1:-}" in
+	adguard-password-for)
+		requested_url="${2:-}"
+		requested_user="${3:-}"
+		bound_url="${SECRET_BOUND_URL:-${UCI_API_URL:-http://127.0.0.1:3000}}"
+		bound_url="${bound_url%/}"
+		bound_user="${SECRET_BOUND_USER:-${UCI_API_USER:-}}"
+		[ "$requested_url" = "$bound_url" ] && [ "$requested_user" = "$bound_user" ] || exit 1
+		[ -n "${SECRET_PASSWORD:-}" ] || exit 1
+		printf '%s\n' "$SECRET_PASSWORD"
+		;;
+	*) exit 1 ;;
+esac
+SH
+	chmod +x "$TMP_DIR/secrets"
+
 	cat >"$TMP_DIR/nslookup" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${NSLOOKUP_LOG:?}"
@@ -247,11 +266,13 @@ prepare_api_json() {
 	NSLOOKUP_LOG="$TMP_DIR/nslookup-call.log"
 	SLEEP_LOG="$TMP_DIR/sleep.log"
 	SLEEP_COUNT_FILE="$TMP_DIR/sleep.count"
+	SECRETS_LOG="$TMP_DIR/secrets.log"
 	REAL_JQ="${REAL_JQ:-$(command -v jq)}"
 	STATE_DIR="$TMP_DIR/state"
-	export CURL_LOG CURL_AUTH_LOG FLOCK_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG NSLOOKUP_LOG SLEEP_LOG SLEEP_COUNT_FILE REAL_JQ STATE_DIR
+	export CURL_LOG CURL_AUTH_LOG FLOCK_LOG LOGGER_LOG DNS_INFO_JSON POSTED_JSON TEST_UPSTREAM_JSON JQ_LOG NSLOOKUP_LOG SLEEP_LOG SLEEP_COUNT_FILE SECRETS_LOG REAL_JQ STATE_DIR
 	: >"$CURL_AUTH_LOG"
 	: >"$FLOCK_LOG"
+	: >"$SECRETS_LOG"
 	printf '0\n' >"$SLEEP_COUNT_FILE"
 
 	cat >"$DNS_INFO_JSON" <<'JSON'
@@ -261,6 +282,7 @@ JSON
 
 run_script() {
 	UCI_CMD="$TMP_DIR/uci" \
+	SECRETS_BIN="$TMP_DIR/secrets" \
 	CURL_CMD="$TMP_DIR/curl" \
 	FLOCK_CMD="$TMP_DIR/flock" \
 	LOGGER_CMD="$TMP_DIR/logger" \
@@ -271,6 +293,23 @@ run_script() {
 	JQ_CMD="$TMP_DIR/jq" \
 	SLEEP_CMD="$TMP_DIR/sleep" \
 	"$SCRIPT" "$@"
+}
+
+test_persisted_password_is_bound_to_saved_endpoint() {
+	: >"$CURL_AUTH_LOG"
+	: >"$SECRETS_LOG"
+	UCI_API_URL='http://attacker.example:3000' \
+	UCI_API_USER='saved-user' \
+	UCI_API_PASS='legacy-readable-secret' \
+	SECRET_BOUND_URL='http://saved.example:3000' \
+	SECRET_BOUND_USER='saved-user' \
+	SECRET_PASSWORD='protected-secret' \
+		run_script --preflight >/dev/null || true
+
+	if grep -F -- 'legacy-readable-secret' "$CURL_AUTH_LOG" >/dev/null || grep -F -- 'protected-secret' "$CURL_AUTH_LOG" >/dev/null; then
+		fail "a changed AdGuard endpoint must not receive either legacy or protected saved passwords"
+	fi
+	assert_contains 'adguard-password-for http://attacker.example:3000 saved-user' "$(cat "$SECRETS_LOG")" "runtime must verify the endpoint binding before loading the protected password"
 }
 
 test_preflight_uses_candidate_configuration() {
@@ -508,6 +547,7 @@ test_preflight_rejects_upstream_error_response
 test_preflight_requires_configured_default_upstream
 test_preflight_does_not_require_accept_dns
 test_preflight_uses_candidate_configuration
+test_persisted_password_is_bound_to_saved_endpoint
 test_apply_profile_preserves_dns_info
 test_apply_profile_fails_when_lock_is_unavailable
 test_symlink_state_directory_is_rejected

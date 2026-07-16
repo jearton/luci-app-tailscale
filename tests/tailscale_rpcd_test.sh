@@ -18,6 +18,26 @@ fail() {
 
 mkdir -p "$TMP_DIR"
 
+cat >"$TMP_DIR/secrets" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"${SECRETS_ARGV_LOG:?}"
+case "${1:-}" in
+	has)
+		case "${2:-}" in
+			authkey|adguard_password) exit 0 ;;
+		esac
+		;;
+	matches-adguard)
+		[ "${2:-}" = 'http://saved.example:3000' ] && [ "${3:-}" = 'saved-user' ]
+		;;
+	set-authkey|set-adguard)
+		cat >"${SECRETS_STDIN_LOG:?}"
+		;;
+	*) exit 1 ;;
+esac
+SH
+chmod +x "$TMP_DIR/secrets"
+
 cat >"$TMP_DIR/preflight" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >"${PREFLIGHT_ARGV_LOG:?}"
@@ -38,14 +58,24 @@ chmod +x "$TMP_DIR/preflight"
 
 PREFLIGHT_ARGV_LOG="$TMP_DIR/argv.log"
 PREFLIGHT_ENV_LOG="$TMP_DIR/env.log"
-export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG
+SECRETS_ARGV_LOG="$TMP_DIR/secrets-argv.log"
+SECRETS_STDIN_LOG="$TMP_DIR/secrets-stdin.log"
+export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG
+: >"$SECRETS_ARGV_LOG"
+: >"$SECRETS_STDIN_LOG"
 
-list_json="$(PRECHECK_BIN="$TMP_DIR/preflight" "$RPCD_SCRIPT" list)"
+list_json="$(PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" list)"
 printf '%s' "$list_json" | jq -e '.adguard_preflight.candidate == "" and .adguard_preflight.password == ""' >/dev/null || \
 	fail "rpcd list output must declare the AdGuard preflight string arguments"
+printf '%s' "$list_json" | jq -e '.secret_status == {} and .set_secret.name == "" and .set_secret.value == ""' >/dev/null || \
+	fail "rpcd list output must declare secret status and write methods"
+
+status_response="$(printf '%s\n' '{}' | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call secret_status)"
+printf '%s' "$status_response" | jq -e '.authkey_set == "1" and .adguard_password_set == "1"' >/dev/null || \
+	fail "secret status must expose booleans without returning secret values"
 
 request='{"candidate":"1","api_url":"http://candidate.example:3000","username":"candidate-user","password_set":"1","password":"candidate-secret","default_upstreams":"1.1.1.1\\n8.8.8.8","tailnet_upstreams":"[/candidate.example/]100.100.100.100","health_domain":"candidate-health.example","expected_ips":"10.23.0.15\\n10.23.0.16"}'
-response="$(printf '%s\n' "$request" | PRECHECK_BIN="$TMP_DIR/preflight" "$RPCD_SCRIPT" call adguard_preflight)"
+response="$(printf '%s\n' "$request" | PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call adguard_preflight)"
 
 printf '%s' "$response" | jq -e '.ready == "pass" and .health_check == "pass" and .code == 0' >/dev/null || \
 	fail "rpcd preflight must return the structured checker result"
@@ -55,7 +85,26 @@ grep -F 'api_url=http://candidate.example:3000' "$PREFLIGHT_ENV_LOG" >/dev/null 
 grep -F 'password=candidate-secret' "$PREFLIGHT_ENV_LOG" >/dev/null || fail "rpcd preflight must pass the candidate password through the child environment"
 grep -F 'default_upstreams=1.1.1.1' "$PREFLIGHT_ENV_LOG" >/dev/null || fail "rpcd preflight must preserve candidate upstreams"
 
-printf '%s\n' '{}' | PRECHECK_BIN="$TMP_DIR/preflight" "$RPCD_SCRIPT" call unknown >/dev/null 2>&1 && \
+: >"$PREFLIGHT_ARGV_LOG"
+reuse_request='{"candidate":"1","api_url":"http://attacker.example:3000","username":"saved-user","password_set":"0","password":"","default_upstreams":"1.1.1.1","tailnet_upstreams":"[/candidate.example/]100.100.100.100","health_domain":"candidate-health.example","expected_ips":"10.23.0.15"}'
+if printf '%s\n' "$reuse_request" | PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call adguard_preflight >/dev/null 2>&1; then
+	fail "preflight must reject saved-password reuse for a different AdGuard endpoint"
+fi
+[ ! -s "$PREFLIGHT_ARGV_LOG" ] || fail "rejected credential reuse must not invoke the preflight checker"
+
+: >"$PREFLIGHT_ARGV_LOG"
+unsafe_request='{"candidate":"1","api_url":"file:///etc/shadow","username":"candidate-user","password_set":"1","password":"candidate-secret","default_upstreams":"1.1.1.1","tailnet_upstreams":"[/candidate.example/]100.100.100.100","health_domain":"candidate-health.example","expected_ips":"10.23.0.15"}'
+if printf '%s\n' "$unsafe_request" | PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call adguard_preflight >/dev/null 2>&1; then
+	fail "preflight must reject non-HTTP AdGuard API URLs"
+fi
+[ ! -s "$PREFLIGHT_ARGV_LOG" ] || fail "rejected API schemes must not invoke the preflight checker"
+
+set_request='{"name":"adguard_password","value":"new-secret","api_url":"http://new.example:3000","username":"new-user"}'
+printf '%s\n' "$set_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secret >/dev/null
+printf '%s' "$(cat "$SECRETS_STDIN_LOG")" | jq -e '.password == "new-secret" and .api_url == "http://new.example:3000" and .username == "new-user"' >/dev/null || \
+	fail "AdGuard secret writes must preserve the endpoint binding"
+
+printf '%s\n' '{}' | PRECHECK_BIN="$TMP_DIR/preflight" SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call unknown >/dev/null 2>&1 && \
 	fail "unknown rpcd methods must fail closed"
 
 echo "tailscale rpcd tests passed"

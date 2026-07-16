@@ -4,10 +4,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 PRECHECK_BIN="${PRECHECK_BIN:-/usr/sbin/tailscale_adguard_dns_switch}"
+SECRETS_BIN="${SECRETS_BIN:-/usr/sbin/tailscale_secrets}"
 JQ_BIN="${JQ_BIN:-jq}"
 
 print_methods() {
-	printf '%s\n' '{"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""}}'
+	printf '%s\n' '{"secret_status":{},"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""},"set_secret":{"name":"","value":"","api_url":"","username":""}}'
 }
 
 fail_json() {
@@ -50,9 +51,20 @@ parse_request() {
 		0|1) ;;
 		*) fail_json "invalid password mode" ;;
 	esac
+	if [ "$candidate" = "1" ]; then
+		case "$api_url" in
+			http://?*|https://?*) ;;
+			*) fail_json "AdGuard API URL must use HTTP or HTTPS" ;;
+		esac
+	fi
 }
 
 run_preflight() {
+	if [ "$candidate" = "1" ] && [ "$password_set" = "0" ]; then
+		"$SECRETS_BIN" matches-adguard "$api_url" "$username" >/dev/null 2>&1 || \
+			fail_json "saved AdGuard password is not bound to this API URL and username"
+	fi
+
 	if [ "$candidate" = "1" ]; then
 		if output="$(
 			TAILSCALE_ADGUARD_PREFLIGHT_CANDIDATE=1 \
@@ -88,14 +100,61 @@ run_preflight() {
 	'
 }
 
+run_secret_status() {
+	authkey_set=0
+	adguard_password_set=0
+	"$SECRETS_BIN" has authkey >/dev/null 2>&1 && authkey_set=1
+	"$SECRETS_BIN" has adguard_password >/dev/null 2>&1 && adguard_password_set=1
+	"$JQ_BIN" -nc \
+		--arg authkey_set "$authkey_set" \
+		--arg adguard_password_set "$adguard_password_set" \
+		'{authkey_set:$authkey_set,adguard_password_set:$adguard_password_set}'
+}
+
+run_set_secret() {
+	request="$(cat)"
+	printf '%s' "$request" | "$JQ_BIN" -e '
+		type == "object" and
+		(.name | type == "string") and
+		(.value | type == "string" and length > 0) and
+		(.api_url | type == "string") and
+		(.username | type == "string")
+	' >/dev/null 2>&1 || fail_json "invalid secret request"
+	name="$(printf '%s' "$request" | "$JQ_BIN" -r '.name')"
+	case "$name" in
+		authkey)
+			printf '%s' "$request" | "$JQ_BIN" -jr '.value' | "$SECRETS_BIN" set-authkey || \
+				fail_json "failed to store auth key"
+			;;
+		adguard_password)
+			printf '%s' "$request" | "$JQ_BIN" -c '{password:.value,api_url:.api_url,username:.username}' | \
+				"$SECRETS_BIN" set-adguard || fail_json "failed to store AdGuard password"
+			;;
+		*)
+			fail_json "invalid secret name"
+			;;
+	esac
+	printf '%s\n' '{"code":0}'
+}
+
 case "${1:-}" in
 	list)
 		print_methods
 		;;
 	call)
-		[ "${2:-}" = "adguard_preflight" ] || exit 1
-		parse_request
-		run_preflight
+		case "${2:-}" in
+			secret_status)
+				run_secret_status
+				;;
+			adguard_preflight)
+				parse_request
+				run_preflight
+				;;
+			set_secret)
+				run_set_secret
+				;;
+			*) exit 1 ;;
+		esac
 		;;
 	*)
 		exit 1

@@ -159,6 +159,8 @@ assert_file root/usr/sbin/tailscale_helper
 assert_file root/usr/sbin/tailscale_keepalive
 assert_file root/usr/sbin/tailscale_adguard_dns_switch
 assert_file root/usr/sbin/tailscale_peer_probe
+assert_file root/usr/sbin/tailscale_secrets
+assert_file root/lib/upgrade/keep.d/luci-app-tailscale
 assert_file root/usr/libexec/rpcd/luci.tailscale
 assert_file root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains "Peer probe" root/usr/sbin/tailscale_peer_probe
@@ -517,9 +519,15 @@ assert_contains 'msgid "Leave blank to keep the existing AdGuard password; enter
 assert_contains 'msgstr "留空则保留现有 AdGuard 密码；填写新值则覆盖。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Leave blank to keep the existing auth key; enter a new value to replace it."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "留空则保留现有认证密钥；填写新值则覆盖。"' po/zh_Hans/tailscale.po
-assert_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_contains '"luci.tailscale": [ "secret_status" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secret" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_not_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains '"/usr/sbin/tailscale_peer_probe": [ "exec" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_not_contains "config_get authkey" root/etc/init.d/tailscale
+assert_contains 'tailscale_secrets migrate' root/etc/uci-defaults/40_luci-tailscale
+assert_not_contains "option adguard_password" root/etc/config/tailscale
+assert_not_contains "option authkey" root/etc/config/tailscale
 
 assert_not_exists root/lib/netifd/proto/tailscale.sh
 assert_not_exists htdocs/luci-static/resources/protocol/tailscale.js

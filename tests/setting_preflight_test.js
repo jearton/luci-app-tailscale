@@ -21,6 +21,13 @@ assert(
 	'setting view should refresh AdGuard DNS preflight status after initial render'
 );
 
+assert(source.includes("method: 'secret_status'"), 'setting view must load credential presence through a dedicated RPC');
+assert(source.includes("method: 'set_secret'"), 'setting view must write credentials through a dedicated RPC');
+assert(!source.includes("uci.get('tailscale', 'settings', 'adguard_password')"), 'browser must never read the persisted AdGuard password');
+assert(!source.includes("uci.get('tailscale', 'settings', 'authkey')"), 'browser must never read the persisted auth key');
+assert(!source.includes("uci.set('tailscale', section_id, 'adguard_password'"), 'browser must not persist AdGuard passwords in readable UCI');
+assert(!source.includes("uci.set('tailscale', section_id, 'authkey'"), 'browser must not persist auth keys in readable UCI');
+
 const helperSource = source.split('return view.extend({')[0];
 
 const candidateValues = {
