@@ -39,6 +39,11 @@ fi
 grep -F 'bash luci-app-tailscale/.github/scripts/build-openwrt-package.sh' "$workflow" >/dev/null
 grep -F 'docker pull "$SDK_IMAGE"' "$sdk_runner" >/dev/null
 grep -F 'docker run --rm' "$sdk_runner" >/dev/null
+grep -F -- '--volume "$ARTIFACTS_DIR:/feed"' "$sdk_runner" >/dev/null
+if grep -F -- '--volume "$PACKAGE_FEED_DIR:/feed"' "$sdk_runner" >/dev/null; then
+	printf '%s\n' 'the OpenWrt feed mount must contain the package directory, not point at the package itself' >&2
+	exit 1
+fi
 grep -F './scripts/feeds update -a' "$sdk_build" >/dev/null
 grep -F 'package/$PACKAGE_NAME/compile' "$sdk_build" >/dev/null
 if grep -F 'gh-action-sdk@' "$workflow" >/dev/null; then

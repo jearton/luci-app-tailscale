@@ -25,7 +25,7 @@ docker run --rm \
 	--env "PACKAGE_NAME=$PACKAGE_NAME" \
 	--env "V=${V:-s}" \
 	--volume "$ARTIFACTS_DIR:/artifacts" \
-	--volume "$PACKAGE_FEED_DIR:/feed" \
+	--volume "$ARTIFACTS_DIR:/feed" \
 	--volume "$SDK_BUILD_SCRIPT:/usr/local/bin/openwrt-sdk-build:ro" \
 	--entrypoint /bin/bash \
 	"$SDK_IMAGE" \
