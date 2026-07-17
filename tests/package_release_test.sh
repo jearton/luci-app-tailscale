@@ -159,6 +159,9 @@ assert_file root/etc/init.d/tailscale
 assert_file root/usr/sbin/tailscale_helper
 assert_file root/usr/sbin/tailscale_keepalive
 assert_file root/usr/sbin/tailscale_adguard_dns_switch
+assert_file root/usr/sbin/tailscale_openclash_bypass
+assert_file root/etc/config/tailscale_openclash
+assert_file root/etc/init.d/tailscale-openclash-bypass
 assert_file root/usr/sbin/tailscale_peer_probe
 assert_file root/usr/sbin/tailscale_secrets
 assert_file root/lib/upgrade/keep.d/luci-app-tailscale
@@ -182,6 +185,13 @@ assert_contains 'firewall.$section.src=$zone' root/usr/sbin/tailscale_helper
 assert_contains 'firewall.$section.proto=udp' root/usr/sbin/tailscale_helper
 assert_contains 'firewall.$section.dest_port=$port' root/usr/sbin/tailscale_helper
 assert_contains 'firewall.$section.target=ACCEPT' root/usr/sbin/tailscale_helper
+assert_not_contains "tailscale_openclash_bypass" root/usr/sbin/tailscale_helper
+assert_not_contains "openclash_custom_firewall_rules.sh" root/usr/sbin/tailscale_helper
+assert_not_contains "/etc/config/firewall" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "uci commit firewall" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "/etc/init.d/firewall" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "/etc/init.d/openclash reload" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "/etc/init.d/openclash restart" root/usr/sbin/tailscale_openclash_bypass
 assert_contains 'msgid "Allow WAN Direct"' po/templates/tailscale.pot
 assert_contains 'msgid "WAN Direct Source Zones"' po/templates/tailscale.pot
 assert_contains 'msgid "Allow WAN Direct"' po/zh_Hans/tailscale.po
@@ -537,6 +547,13 @@ assert_contains "TAILSCALE_INTERNAL_RELOAD" root/etc/init.d/tailscale
 assert_not_contains "RELOAD_MARKER_FILE" root/etc/init.d/tailscale
 assert_contains 'activate "$secrets_ref"' root/etc/init.d/tailscale
 assert_contains "Package/luci-app-tailscale/prerm" Makefile
+assert_contains "Package/luci-app-tailscale/postinst" Makefile
+assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-openclash-bypass ]; then' Makefile
+assert_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
+assert_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
+assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
+assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
+assert_before "/usr/sbin/tailscale_openclash_bypass cleanup" "/etc/init.d/tailscale stop" Makefile
 assert_contains "/etc/init.d/tailscale stop" Makefile
 assert_not_contains "/etc/init.d/tailscale stop >/dev/null 2>&1 || true" Makefile
 
