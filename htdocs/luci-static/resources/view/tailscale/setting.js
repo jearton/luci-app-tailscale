@@ -895,6 +895,9 @@ return view.extend({
 					persistedAdguardConfig = readPersistedAdguardConfig();
 				};
 				updateStatus();
+			}).then(function(result) {
+				window.setTimeout(refreshOpenclashBypassStatus, 0);
+				return result;
 			}).finally(function() {
 				saveInFlight = null;
 			});

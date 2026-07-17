@@ -114,7 +114,15 @@ run_secret_status() {
 }
 
 run_openclash_bypass_status() {
-	"$OPENCLASH_BYPASS_BIN" status
+	if output="$("$OPENCLASH_BYPASS_BIN" status 2>&1)"; then
+		:
+	else
+		fail_json "failed to read OpenClash bypass status"
+	fi
+
+	printf '%s\n' "$output" | "$JQ_BIN" -se 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 || \
+		fail_json "invalid OpenClash bypass status"
+	printf '%s\n' "$output"
 }
 
 run_set_secrets() {

@@ -27,6 +27,13 @@ assert_not_contains() {
 	fi
 }
 
+assert_jq() {
+	filter="$1"
+	file="$2"
+	message="$3"
+	jq -e "$filter" "$ROOT_DIR/$file" >/dev/null || fail "$message"
+}
+
 line_number() {
 	needle="$1"
 	file="$2"
@@ -532,9 +539,12 @@ assert_contains 'msgid "Leave blank to keep the existing auth key; enter a new v
 assert_contains 'msgstr "留空则保留现有认证密钥；填写新值则覆盖。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Failed to stage protected credentials."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "暂存受保护凭证失败。"' po/zh_Hans/tailscale.po
-assert_contains '"luci.tailscale": [ "secret_status", "openclash_bypass_status" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secrets" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
-assert_contains '"uci": [ "tailscale", "tailscale_openclash" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+acl_file=root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_jq '.["luci-app-tailscale"].read.uci == ["tailscale", "tailscale_openclash"]' "$acl_file" 'ACL read UCI access must be exactly tailscale and tailscale_openclash'
+assert_jq '.["luci-app-tailscale"].write.uci == ["tailscale", "tailscale_openclash"]' "$acl_file" 'ACL write UCI access must be exactly tailscale and tailscale_openclash'
+assert_jq '.["luci-app-tailscale"].read.ubus["luci.tailscale"] == ["secret_status", "openclash_bypass_status"]' "$acl_file" 'ACL read ubus access must be exactly the two read-only Tailscale methods'
+assert_jq '.["luci-app-tailscale"].read.file | has("/usr/sbin/tailscale_openclash_bypass") | not' "$acl_file" 'ACL must not grant file-exec access to the OpenClash helper'
 assert_not_contains '"set_secret"' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json

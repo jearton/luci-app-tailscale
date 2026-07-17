@@ -25,10 +25,48 @@ function createRuntime() {
 	const uciSets = [];
 	const scheduled = [];
 	const maps = [];
-	const statusNode = { textContent: '' };
+	const lifecycle = [];
+	const nodes = new Map();
+	const statusNodes = [];
 	const openclashUci = { enabled: '1' };
 	const luciString = value => String(value);
 	luciString.format = (format, ...values) => format.replace(/%s/g, () => values.shift());
+
+	function textFrom(value) {
+		if (Array.isArray(value))
+			return value.map(textFrom).join('');
+		if (value == null)
+			return '';
+		if (typeof value === 'object')
+			return textFrom(value.children);
+		return String(value);
+	}
+
+	function E(tag, attrs, children) {
+		return {
+			tag,
+			attrs: attrs || {},
+			children,
+			textContent: textFrom(children)
+		};
+	}
+
+	function registerNode(value) {
+		if (Array.isArray(value)) {
+			value.forEach(registerNode);
+			return;
+		}
+		if (!value || typeof value !== 'object')
+			return;
+
+		const id = value.attrs && value.attrs.id;
+		if (id) {
+			nodes.set(id, value);
+			if (id === 'openclash_bypass_status')
+				statusNodes.push(value);
+		}
+		registerNode(value.children);
+	}
 
 	function Option(option) {
 		this.option = option;
@@ -36,10 +74,13 @@ function createRuntime() {
 
 	Option.prototype.depends = function() {};
 	Option.prototype.value = function() {};
-	Option.prototype.formvalue = function() { return ''; };
-	Option.prototype.cbid = function(section_id) { return section_id + '.' + this.option; };
+	Option.prototype.formvalue = function() {
+		return this.map && this.map.formValues[this.option] || '';
+	};
+	Option.prototype.cbid = function(sectionId) { return sectionId + '.' + this.option; };
 
-	function Section() {
+	function Section(map) {
+		this.map = map;
 		this.tabs = [];
 		this.options = [];
 	}
@@ -50,6 +91,7 @@ function createRuntime() {
 
 	Section.prototype.taboption = function(tab, Type, option) {
 		const value = new Type(option);
+		value.map = this.map;
 		value.tab = tab;
 		this.options.push(value);
 		return value;
@@ -57,32 +99,65 @@ function createRuntime() {
 
 	Section.prototype.option = function(Type, option) {
 		const value = new Type(option);
+		value.map = this.map;
 		this.options.push(value);
 		return value;
 	};
 
-	function Map(config) {
+	function FormMap(config) {
 		this.config = config;
 		this.sections = [];
+		this.formValues = {};
 		this.data = {
-			save: async () => {},
-			load: async () => {}
+			save: async () => lifecycle.push('uci-save'),
+			load: async () => lifecycle.push('uci-load')
 		};
 		maps.push(this);
 	}
 
-	Map.prototype.section = function() {
-		const section = new Section();
+	FormMap.prototype.section = function() {
+		const section = new Section(this);
 		this.sections.push(section);
 		return section;
 	};
 
-	Map.prototype.render = function() {
-		return Promise.resolve({ map: this });
+	FormMap.prototype.options = function() {
+		return this.sections.flatMap(section => section.options);
+	};
+
+	FormMap.prototype.checkDepends = function() {
+		lifecycle.push('depends');
+	};
+
+	FormMap.prototype.parse = async function() {
+		lifecycle.push('parse');
+		for (const option of this.options()) {
+			if (Object.prototype.hasOwnProperty.call(this.formValues, option.option) && typeof option.write === 'function')
+				await option.write('settings', this.formValues[option.option]);
+		}
+	};
+
+	FormMap.prototype.load = async function() {
+		lifecycle.push('load');
+	};
+
+	FormMap.prototype.renderContents = async function() {
+		lifecycle.push('renderContents');
+		nodes.clear();
+		this.options().forEach(option => {
+			if (typeof option.renderWidget === 'function')
+				registerNode(option.renderWidget('settings', option.option));
+		});
+		return { map: this };
+	};
+
+	FormMap.prototype.render = function() {
+		lifecycle.push('render');
+		return this.renderContents();
 	};
 
 	const form = {
-		Map,
+		Map: FormMap,
 		TypedSection: Option,
 		NamedSection: Option,
 		Flag: Option,
@@ -110,7 +185,7 @@ function createRuntime() {
 		Set,
 		Error,
 		_: value => value,
-		E: (tag, attrs, children) => ({ tag, attrs, children }),
+		E,
 		form,
 		fs: {},
 		network: { getNetworks: async () => [] },
@@ -147,7 +222,7 @@ function createRuntime() {
 		},
 		ui: { showModal: () => {}, hideModal: () => {} },
 		document: {
-			getElementById: id => id === 'openclash_bypass_status' ? statusNode : null
+			getElementById: id => nodes.get(id) || null
 		},
 		window: {
 			setTimeout: (callback, delay) => {
@@ -161,7 +236,22 @@ function createRuntime() {
 		view: { extend: value => value }
 	}));
 
-	return { viewObject, rpcDeclarations, rpcCalls, uciLoads, uciSets, scheduled, maps, statusNode };
+	return {
+		viewObject,
+		rpcDeclarations,
+		rpcCalls,
+		uciLoads,
+		uciSets,
+		scheduled,
+		maps,
+		lifecycle,
+		statusNodes,
+		currentStatusNode: () => nodes.get('openclash_bypass_status')
+	};
+}
+
+function scheduledOpenclashRefresh(runtime) {
+	return runtime.scheduled.find(entry => entry.callback.name === 'refreshOpenclashBypassStatus');
 }
 
 (async () => {
@@ -176,28 +266,39 @@ function createRuntime() {
 
 	await runtime.viewObject.render(data);
 	assert(!runtime.rpcCalls.some(call => call.method === 'openclash_bypass_status'), 'render() must schedule, not await, OpenClash status RPC');
-	const refresh = runtime.scheduled.find(entry => entry.callback.name === 'refreshOpenclashBypassStatus');
-	assert(refresh && refresh.delay === 0, 'render() must queue the OpenClash status refresh immediately after rendering');
-	await refresh.callback();
-	assert(runtime.statusNode.textContent === 'Enabled and active', 'async status refresh must render the helper state label');
+	const initialRefresh = scheduledOpenclashRefresh(runtime);
+	const initialNode = runtime.currentStatusNode();
+	assert(initialRefresh && initialRefresh.delay === 0, 'render() must queue the OpenClash status refresh immediately after rendering');
+	assert(initialNode && initialNode.textContent === 'Checking ...', 'render() must create the initial OpenClash status node');
+	await initialRefresh.callback();
+	assert(initialNode.textContent === 'Enabled and active', 'async status refresh must update the rendered status node');
 
 	const map = runtime.maps.find(candidate => candidate.config === 'tailscale');
-	const openclashOption = map.sections
-		.flatMap(section => section.options)
-		.find(option => option.tab === 'openclash' && option.option === 'openclash_bypass_enabled');
+	const openclashOption = map.options().find(option => option.tab === 'openclash' && option.option === 'openclash_bypass_enabled');
 	assert(openclashOption, 'render() must create the OpenClash bypass toggle in its own tab');
 	assert(openclashOption.cfgvalue() === '1', 'toggle must read the isolated enabled value');
-	assert(await openclashOption.write('settings', '0') === 'uci-set', 'toggle write must preserve the UCI result');
-	assert(await openclashOption.remove('settings') === 'uci-set', 'toggle remove must preserve the UCI result');
+
+	runtime.scheduled.length = 0;
+	map.formValues.openclash_bypass_enabled = '0';
+	await map.save(undefined, true);
+	assert(runtime.lifecycle.includes('parse') && runtime.lifecycle.includes('uci-save') && runtime.lifecycle.includes('load') && runtime.lifecycle.includes('renderContents'), 'save() must run the form parse, UCI save, reload, and content render lifecycle');
 	assert(
-		runtime.uciSets.length === 2 && runtime.uciSets.every(call =>
+		runtime.uciSets.length === 1 && runtime.uciSets.every(call =>
 			call.config === 'tailscale_openclash' &&
 			call.section === 'settings' &&
-			call.option === 'enabled'
+			call.option === 'enabled' &&
+			call.value === '0'
 		),
-		'toggle save paths must only write tailscale_openclash.settings.enabled'
+		'actual map.save() must only write tailscale_openclash.settings.enabled'
 	);
-	assert(runtime.uciSets[0].value === '0' && runtime.uciSets[1].value === '0', 'toggle disable and remove must persist disabled state');
+
+	const savedNode = runtime.currentStatusNode();
+	const savedRefresh = scheduledOpenclashRefresh(runtime);
+	assert(savedNode && savedNode !== initialNode && runtime.statusNodes.length === 2, 'save() must replace the status node during renderContents()');
+	assert(savedNode.textContent === 'Checking ...', 'the replacement status node must start in checking state');
+	assert(savedRefresh && savedRefresh.delay === 0, 'successful save() must queue a status refresh after renderContents()');
+	await savedRefresh.callback();
+	assert(savedNode.textContent === 'Enabled and active', 'post-save refresh must update the replacement status node');
 
 	console.log('setting OpenClash bypass tests passed');
 })().catch(error => {

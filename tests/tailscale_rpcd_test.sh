@@ -61,7 +61,19 @@ chmod +x "$TMP_DIR/preflight"
 cat >"$TMP_DIR/openclash-helper" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >"${OPENCLASH_HELPER_ARGV_LOG:?}"
-printf '%s\n' '{"state":"active","rules_present":4,"detail":"helper status"}'
+case "${OPENCLASH_HELPER_MODE:-success}" in
+	success)
+		printf '%s\n' '{"state":"active","rules_present":4,"detail":"helper status"}'
+		;;
+	fail)
+		printf '%s\n' 'partial helper output'
+		printf '%s\n' 'helper failed' >&2
+		exit 7
+		;;
+	invalid)
+		printf '%s\n' 'not JSON'
+		;;
+	esac
 SH
 chmod +x "$TMP_DIR/openclash-helper"
 
@@ -88,6 +100,20 @@ printf '%s' "$openclash_status_response" | jq -e '.state == "active" and .rules_
 	fail "rpcd must return the helper status object unchanged"
 [ "$(cat "$OPENCLASH_HELPER_ARGV_LOG")" = "status" ] || \
 	fail "rpcd must invoke the OpenClash helper with the fixed status argument only"
+
+if openclash_failure_response="$(printf '%s\n' '{}' | OPENCLASH_HELPER_MODE=fail OPENCLASH_BYPASS_BIN="$TMP_DIR/openclash-helper" \
+	"$RPCD_SCRIPT" call openclash_bypass_status 2>&1)"; then
+	fail "rpcd must fail when the OpenClash helper exits nonzero"
+fi
+printf '%s' "$openclash_failure_response" | jq -e '.code == 2 and .ready == "fail" and (.error | type == "string")' >/dev/null || \
+	fail "nonzero OpenClash helper exits must return controlled JSON errors"
+
+if openclash_invalid_response="$(printf '%s\n' '{}' | OPENCLASH_HELPER_MODE=invalid OPENCLASH_BYPASS_BIN="$TMP_DIR/openclash-helper" \
+	"$RPCD_SCRIPT" call openclash_bypass_status 2>&1)"; then
+	fail "rpcd must fail when the OpenClash helper returns invalid JSON"
+fi
+printf '%s' "$openclash_invalid_response" | jq -e '.code == 2 and .ready == "fail" and (.error | type == "string")' >/dev/null || \
+	fail "invalid OpenClash helper JSON must return controlled JSON errors"
 
 status_response="$(printf '%s\n' '{}' | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call secret_status)"
 printf '%s' "$status_response" | jq -e '.authkey_set == "1" and .adguard_password_set == "1"' >/dev/null || \
