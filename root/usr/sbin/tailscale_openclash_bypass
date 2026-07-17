@@ -171,10 +171,275 @@ cleanup_hook() {
 	finish_replacement "$temp_file" "$mode" "$owner"
 }
 
-exec 9>"$LOCK_FILE" || exit 1
-flock -x 9 || exit 1
+rule_specs() {
+	cat <<'EOF'
+openclash_mangle_output|luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）|meta mark & 0x00ff0000 == 0x00080000
+openclash_output|luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（output）|meta mark & 0x00ff0000 == 0x00080000
+openclash_mangle|luci-app-tailscale: tailscale0 入站流量绕过 OpenClash（mangle）|iifname "tailscale0"
+openclash|luci-app-tailscale: tailscale0 入站流量绕过 OpenClash（filter）|iifname "tailscale0"
+EOF
+}
+
+feature_enabled() {
+	enabled="$("$UCI_BIN" -q get tailscale_openclash.settings.enabled 2>/dev/null || true)"
+	[ "$enabled" != 0 ]
+}
+
+new_nft_temp_file() {
+	mktemp "${TMPDIR:-/tmp}/tailscale-openclash-nft.XXXXXX"
+}
+
+nft_json_supported() {
+	printf '%s\n' "$1" | "$JQ_BIN" -e '.nftables | type == "array"' >/dev/null 2>&1
+}
+
+owned_handles() {
+	chain_json="$1"
+	comment="$2"
+	printf '%s' "$chain_json" | "$JQ_BIN" -r --arg comment "$comment" '
+		.nftables[] | .rule? | select(.comment == $comment) | .handle
+	'
+}
+
+append_owned_deletions() {
+	chain="$1"
+	comment="$2"
+	chain_json="$3"
+	deletions="$4"
+	handles="$(owned_handles "$chain_json" "$comment")" || return 1
+	[ -n "$handles" ] || return 0
+
+	while IFS= read -r handle || [ -n "$handle" ]; do
+		case "$handle" in
+			''|*[!0-9]*) return 1 ;;
+		esac
+		printf 'delete rule inet fw4 %s handle %s\n' "$chain" "$handle" >>"$deletions" || return 1
+	done <<EOF
+$handles
+EOF
+}
+
+append_managed_rules() {
+	specs="$(rule_specs)"
+	while IFS='|' read -r chain comment match; do
+		printf 'insert rule inet fw4 %s %s counter comment "%s" return\n' \
+			"$chain" "$match" "$comment" || return 1
+	done <<EOF
+$specs
+EOF
+}
+
+apply_rules() {
+	deletions="$(new_nft_temp_file)" || return 1
+	specs="$(rule_specs)"
+
+	while IFS='|' read -r chain comment match; do
+		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
+			rm -f "$deletions"
+			return 0
+		fi
+		if ! nft_json_supported "$chain_json"; then
+			log_error "OpenClash nftables JSON is unsupported for chain $chain." || true
+			rm -f "$deletions"
+			return 1
+		fi
+		if ! append_owned_deletions "$chain" "$comment" "$chain_json" "$deletions"; then
+			log_error "Failed to read owned OpenClash nftables rules from chain $chain." || true
+			rm -f "$deletions"
+			return 1
+		fi
+	done <<EOF
+$specs
+EOF
+
+	batch="$(new_nft_temp_file)" || {
+		rm -f "$deletions"
+		return 1
+	}
+	if ! cat "$deletions" >"$batch"; then
+		rm -f "$deletions" "$batch"
+		return 1
+	fi
+	rm -f "$deletions"
+	if ! append_managed_rules >>"$batch"; then
+		rm -f "$batch"
+		return 1
+	fi
+	if ! "$NFT_BIN" -f "$batch"; then
+		log_error 'OpenClash nftables reconciliation transaction failed.' || true
+		rm -f "$batch"
+		return 1
+	fi
+	rm -f "$batch"
+}
+
+cleanup_rules() {
+	deletions="$(new_nft_temp_file)" || return 1
+	specs="$(rule_specs)"
+
+	while IFS='|' read -r chain comment match; do
+		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
+			continue
+		fi
+		if ! nft_json_supported "$chain_json"; then
+			log_error "OpenClash nftables JSON is unsupported for chain $chain." || true
+			rm -f "$deletions"
+			return 1
+		fi
+		if ! append_owned_deletions "$chain" "$comment" "$chain_json" "$deletions"; then
+			log_error "Failed to read owned OpenClash nftables rules from chain $chain." || true
+			rm -f "$deletions"
+			return 1
+		fi
+	done <<EOF
+$specs
+EOF
+
+	if [ ! -s "$deletions" ]; then
+		rm -f "$deletions"
+		return 0
+	fi
+	if ! "$NFT_BIN" -f "$deletions"; then
+		log_error 'OpenClash nftables cleanup transaction failed.' || true
+		rm -f "$deletions"
+		return 1
+	fi
+	rm -f "$deletions"
+}
+
+cleanup_all() {
+	result=0
+	cleanup_hook
+	cleanup_result=$?
+	[ "$cleanup_result" -eq 0 ] || result="$cleanup_result"
+	cleanup_rules
+	cleanup_result=$?
+	[ "$result" -ne 0 ] || result="$cleanup_result"
+	return "$result"
+}
+
+print_status_json() {
+	state="$1"
+	enabled="$2"
+	openclash_present="$3"
+	firewall4_supported="$4"
+	hook="$5"
+	rules_present="$6"
+	message="$7"
+	"$JQ_BIN" -nc \
+		--arg state "$state" \
+		--argjson enabled "$enabled" \
+		--argjson openclash_present "$openclash_present" \
+		--argjson firewall4_supported "$firewall4_supported" \
+		--arg hook "$hook" \
+		--argjson rules_present "$rules_present" \
+		--arg message "$message" \
+		'{state: $state, enabled: ($enabled == 1), openclash_present: ($openclash_present == 1), firewall4_supported: ($firewall4_supported == 1), hook: $hook, rules_present: $rules_present, message: $message}'
+}
+
+print_status() {
+	if ! openclash_installed; then
+		print_status_json absent 0 0 0 absent 0 'OpenClash is not installed.'
+		return
+	fi
+
+	if feature_enabled; then
+		enabled=1
+	else
+		enabled=0
+	fi
+	if ! table_json="$("$NFT_BIN" -j list table inet fw4 2>/dev/null)" || ! nft_json_supported "$table_json"; then
+		print_status_json unsupported "$enabled" 1 0 unknown 0 'firewall4/nftables support is unavailable.'
+		return
+	fi
+
+	if [ "$enabled" = 0 ]; then
+		print_status_json disabled 0 1 1 unknown 0 'OpenClash bypass is disabled.'
+		return
+	fi
+
+	if ! hook_state="$(marker_state "$OPENCLASH_HOOK_FILE")"; then
+		print_status_json error 1 1 1 error 0 'Managed hook markers are malformed.'
+		return
+	fi
+	case "$hook_state" in
+		present) hook=managed ;;
+		absent) hook=absent ;;
+		*) print_status_json error 1 1 1 error 0 'Managed hook markers are malformed.'; return ;;
+	esac
+
+	chains_present=1
+	complete_rules=1
+	rules_present=0
+	specs="$(rule_specs)"
+	while IFS='|' read -r chain comment match; do
+		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
+			chains_present=0
+			continue
+		fi
+		if ! nft_json_supported "$chain_json"; then
+			print_status_json unsupported 1 1 0 "$hook" "$rules_present" 'firewall4/nftables support is unavailable.'
+			return
+		fi
+		handles="$(owned_handles "$chain_json" "$comment")" || {
+			print_status_json unsupported 1 1 0 "$hook" "$rules_present" 'firewall4/nftables support is unavailable.'
+			return
+		}
+		chain_rules=0
+		if [ -n "$handles" ]; then
+			while IFS= read -r handle || [ -n "$handle" ]; do
+				case "$handle" in
+					''|*[!0-9]*)
+						print_status_json error 1 1 1 "$hook" "$rules_present" 'OpenClash bypass rule ownership data is invalid.'
+						return
+						;;
+				esac
+				chain_rules=$((chain_rules + 1))
+				rules_present=$((rules_present + 1))
+			done <<EOF
+$handles
+EOF
+		fi
+		[ "$chain_rules" = 1 ] || complete_rules=0
+	done <<EOF
+$specs
+EOF
+
+	if [ "$chains_present" = 0 ]; then
+		print_status_json waiting 1 1 1 "$hook" "$rules_present" 'Waiting for OpenClash nftables chains.'
+		return
+	fi
+	if [ "$hook" = managed ] && [ "$complete_rules" = 1 ] && [ "$rules_present" = 4 ]; then
+		print_status_json active 1 1 1 managed 4 'OpenClash bypass is active.'
+		return
+	fi
+	print_status_json error 1 1 1 "$hook" "$rules_present" 'OpenClash bypass configuration is incomplete.'
+}
+
 case "${1:-}" in
-	reconcile-hook) openclash_installed || exit 0; reconcile_hook ;;
-	cleanup) cleanup_hook ;;
-	*) printf 'usage: %s {reconcile-hook|cleanup}\n' "$0" >&2; exit 2 ;;
+	status)
+		print_status
+		;;
+	reconcile-hook|apply|cleanup)
+		exec 9>"$LOCK_FILE" || exit 1
+		flock -x 9 || exit 1
+		case "$1" in
+			reconcile-hook)
+				openclash_installed || exit 0
+				reconcile_hook
+				;;
+			apply)
+				openclash_installed || exit 0
+				feature_enabled || { cleanup_rules; exit $?; }
+				apply_rules
+				;;
+			cleanup)
+				cleanup_all
+				;;
+		esac
+		;;
+	*)
+		printf 'usage: %s {reconcile-hook|apply|cleanup|status}\n' "$0" >&2
+		exit 2
+		;;
 esac
