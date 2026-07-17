@@ -20,6 +20,11 @@ assert_count() {
 	actual="$(grep -cF -- "$needle" "$file" || true)"
 	[ "$actual" = "$expected" ] || fail "$file expected $expected occurrences of $needle, got $actual"
 }
+assert_line_count() {
+	expected="$1"; line="$2"; file="$3"
+	actual="$(grep -Fxc -- "$line" "$file" || true)"
+	[ "$actual" = "$expected" ] || fail "$file expected $expected exact occurrences of $line, got $actual"
+}
 assert_chown_owner() {
 	owner="$1"
 	grep -F -- "$owner " "$CHOWN_LOG" >/dev/null || fail "chown did not receive numeric owner/group $owner"
@@ -104,10 +109,18 @@ print_chain_json() {
 	printf ']}\n'
 }
 
-delete_rule() {
-	chain="$1"
-	handle="$2"
-	temp_file="$(mktemp "${state}.XXXXXX")"
+target_chain() {
+	case "$1" in
+		openclash_mangle_output|openclash_output|openclash_mangle|openclash) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+delete_rule_from_state() {
+	state_file="$1"
+	chain="$2"
+	handle="$3"
+	temp_file="$(mktemp "${state_file}.XXXXXX")"
 	while IFS='|' read -r stored_handle stored_rule || [ -n "${stored_handle:-}" ]; do
 		if [ "$stored_handle" = "$handle" ]; then
 			case "$stored_rule" in
@@ -115,33 +128,49 @@ delete_rule() {
 			esac
 		fi
 		printf '%s|%s\n' "$stored_handle" "$stored_rule" >>"$temp_file"
-	done <"$state"
-	mv "$temp_file" "$state"
+	done <"$state_file"
+	mv "$temp_file" "$state_file"
 }
 
 apply_batch() {
 	batch="$1"
-	cp "$state" "${state}.next"
+	next_state="$(mktemp "${state}.next.XXXXXX")"
+	cp "$state" "$next_state"
+	operation=0
 	while IFS= read -r statement || [ -n "$statement" ]; do
+		operation=$((operation + 1))
 		case "$statement" in
 			'delete rule inet fw4 '*)
 				rest="${statement#delete rule inet fw4 }"
 				chain="${rest%% handle *}"
 				handle="${rest##* handle }"
-				state="$state" delete_rule "$chain" "$handle"
+				delete_rule_from_state "$next_state" "$chain" "$handle"
 				;;
 			'insert rule inet fw4 '*)
-				next_handle="$(awk -F '|' 'BEGIN { max = 0 } $1 + 0 > max { max = $1 + 0 } END { print max + 1 }' "$state")"
-				printf '%s|%s\n' "$next_handle" "$statement" >>"$state"
+				next_handle="$(awk -F '|' 'BEGIN { max = 0 } $1 + 0 > max { max = $1 + 0 } END { print max + 1 }' "$next_state")"
+				printf '%s|%s\n' "$next_handle" "$statement" >>"$next_state"
 				;;
 			*)
 				printf 'unsupported fake nft statement: %s\n' "$statement" >&2
-				mv "${state}.next" "$state"
+				rm -f "$next_state"
 				exit 99
 				;;
 		esac
+		if [ "${NFT_BATCH_FAIL_AFTER:-0}" = "$operation" ]; then
+			rm -f "$next_state"
+			exit 1
+		fi
 	done <"$batch"
-	rm -f "${state}.next"
+	mv "$next_state" "$state"
+}
+
+print_table_json() {
+	printf '{"nftables":[{"table":{"family":"inet","name":"fw4"}}'
+	for chain in openclash_mangle_output openclash_output openclash_mangle openclash; do
+		[ "${MISSING_CHAIN:-}" = "$chain" ] && continue
+		printf ',{"chain":{"family":"inet","table":"fw4","name":"%s"}}' "$chain"
+	done
+	printf ']}\n'
 }
 
 if [ "$#" = 5 ] && [ "$1" = '-j' ] && [ "$2" = 'list' ] && [ "$3" = 'table' ] && \
@@ -150,7 +179,7 @@ if [ "$#" = 5 ] && [ "$1" = '-j' ] && [ "$2" = 'list' ] && [ "$3" = 'table' ] &&
 	if [ "${NFT_JSON_UNSUPPORTED:-0}" = 1 ]; then
 		printf 'not-json\n'
 	else
-		printf '{"nftables":[{"table":{"family":"inet","name":"fw4"}}]}\n'
+		print_table_json
 	fi
 	exit 0
 fi
@@ -158,7 +187,12 @@ fi
 if [ "$#" = 7 ] && [ "$1" = '-j' ] && [ "$2" = '-a' ] && [ "$3" = 'list' ] && \
 	[ "$4" = 'chain' ] && [ "$5" = 'inet' ] && [ "$6" = 'fw4' ]; then
 	chain="$7"
+	target_chain "$chain" || {
+		printf 'unsupported fake nft chain: %s\n' "$chain" >&2
+		exit 99
+	}
 	[ "${MISSING_CHAIN:-}" = "$chain" ] && exit 1
+	[ "${LIST_CHAIN_FAIL:-}" = "$chain" ] && exit 1
 	if [ "${NFT_JSON_UNSUPPORTED:-0}" = 1 ]; then
 		printf 'not-json\n'
 	else
@@ -325,7 +359,11 @@ assert_count 1 'insert rule inet fw4 openclash_mangle_output ' "$NFT_BATCH_LOG"
 assert_count 1 'insert rule inet fw4 openclash_output ' "$NFT_BATCH_LOG"
 assert_count 1 'insert rule inet fw4 openclash_mangle iifname "tailscale0"' "$NFT_BATCH_LOG"
 assert_count 1 'insert rule inet fw4 openclash iifname "tailscale0"' "$NFT_BATCH_LOG"
-assert_count 4 '-j -a list chain inet fw4 ' "$NFT_CALL_LOG"
+assert_count 1 '-j list table inet fw4' "$NFT_CALL_LOG"
+assert_line_count 1 '-j -a list chain inet fw4 openclash_mangle_output' "$NFT_CALL_LOG"
+assert_line_count 1 '-j -a list chain inet fw4 openclash_output' "$NFT_CALL_LOG"
+assert_line_count 1 '-j -a list chain inet fw4 openclash_mangle' "$NFT_CALL_LOG"
+assert_line_count 1 '-j -a list chain inet fw4 openclash' "$NFT_CALL_LOG"
 assert_count 1 '-f ' "$NFT_CALL_LOG"
 grep -F 'comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）" return' "$NFT_BATCH_LOG" >/dev/null || \
 	fail 'mangle output rule comment is not exact'
@@ -352,11 +390,31 @@ printf '%s' "$(run_helper status)" | jq -e '
 [ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$state_before_status" ] || fail 'status rewrote nftables state'
 
 : >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
 MISSING_CHAIN=openclash_output run_helper apply
 [ ! -s "$NFT_BATCH_LOG" ] || fail 'missing target chain produced a partial nft transaction'
+[ ! -s "$NFT_BATCH_LOG" ] || fail 'missing target chain wrote an nft batch'
+assert_count 1 '-j list table inet fw4' "$NFT_CALL_LOG"
+assert_count 0 '-j -a list chain inet fw4 ' "$NFT_CALL_LOG"
+assert_count 0 '-f ' "$NFT_CALL_LOG"
 printf '%s' "$(MISSING_CHAIN=openclash_output run_helper status)" | jq -e '.state == "waiting"' >/dev/null || \
 	fail 'missing chain did not report waiting'
 MISSING_CHAIN=
+
+: >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
+state_before_list_failure="$(sha256sum "$NFT_STATE" | awk '{print $1}')"
+if LIST_CHAIN_FAIL=openclash_output run_helper apply; then
+	fail 'apply must fail when a table-enumerated chain cannot be listed'
+fi
+LIST_CHAIN_FAIL=
+[ ! -s "$NFT_BATCH_LOG" ] || fail 'list-chain precheck failure wrote an nft batch'
+assert_count 0 '-f ' "$NFT_CALL_LOG"
+[ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$state_before_list_failure" ] || \
+	fail 'list-chain precheck failure changed nft state'
+printf '%s' "$(LIST_CHAIN_FAIL=openclash_output run_helper status)" | jq -e '.state == "error"' >/dev/null || \
+	fail 'table-enumerated list-chain failure did not report error'
+LIST_CHAIN_FAIL=
 
 : >"$NFT_BATCH_LOG"
 state_before_failed_batch="$(sha256sum "$NFT_STATE" | awk '{print $1}')"
@@ -370,13 +428,37 @@ NFT_BATCH_FAIL=0
 grep -F 'OpenClash nftables reconciliation transaction failed.' "$LOGGER_LOG" >/dev/null || \
 	fail 'failed nft batch was not logged'
 
+: >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
+state_before_mid_batch_failure="$(sha256sum "$NFT_STATE" | awk '{print $1}')"
+if NFT_BATCH_FAIL_AFTER=1 run_helper apply; then
+	fail 'apply must fail when fake nft fails after the first batch operation'
+fi
+NFT_BATCH_FAIL_AFTER=0
+[ -s "$NFT_BATCH_LOG" ] || fail 'mid-batch failure did not submit an nft batch'
+assert_count 1 '-f ' "$NFT_CALL_LOG"
+[ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$state_before_mid_batch_failure" ] || \
+	fail 'mid-batch fake nft failure changed the primary state'
+
 FEATURE_ENABLED=0 run_helper apply
 grep -F 'luci-app-tailscale:' "$NFT_STATE" >/dev/null && fail 'disabled apply left owned nft rules'
 printf '%s' "$(FEATURE_ENABLED=0 run_helper status)" | jq -e '.state == "disabled" and .enabled == false' >/dev/null || \
 	fail 'disabled setting did not take status precedence'
 FEATURE_ENABLED=
 
+: >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
 run_helper apply
+: >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
+if LIST_CHAIN_FAIL=openclash_output run_helper cleanup; then
+	fail 'cleanup must fail when a table-enumerated chain cannot be listed'
+fi
+LIST_CHAIN_FAIL=
+[ ! -s "$NFT_BATCH_LOG" ] || fail 'cleanup list-chain failure wrote an nft batch'
+assert_count 0 '-f ' "$NFT_CALL_LOG"
+grep -F 'luci-app-tailscale:' "$NFT_STATE" >/dev/null || fail 'list-chain cleanup failure changed owned nft rules'
+run_helper reconcile-hook
 if NFT_BATCH_FAIL=1 run_helper cleanup; then
 	fail 'cleanup must fail when the nft delete batch fails'
 fi
@@ -391,6 +473,15 @@ grep -F 'user-owned-rule' "$NFT_STATE" >/dev/null || fail 'cleanup removed a use
 grep -F 'luci-app-tailscale 托管' "$HOOK" >/dev/null && fail 'cleanup left the managed hook block'
 printf '%s' "$(run_helper status)" | jq -e '.state == "error"' >/dev/null || \
 	fail 'incomplete managed state did not report error'
+
+rm -f "$HOOK"
+printf '%s' "$(MISSING_CHAIN=openclash_output run_helper status)" | jq -e '.state == "waiting" and .hook == "absent"' >/dev/null || \
+	fail 'missing hook and target chain did not report waiting'
+MISSING_CHAIN=
+mkdir "$HOOK"
+printf '%s' "$(run_helper status)" | jq -e '.state == "error" and .hook == "error"' >/dev/null || \
+	fail 'hook read failure did not report error'
+rmdir "$HOOK"
 
 printf '%s\n' '# BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash' >>"$HOOK"
 printf '%s' "$(run_helper status)" | jq -e '.state == "error"' >/dev/null || \
