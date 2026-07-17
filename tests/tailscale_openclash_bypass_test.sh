@@ -5,6 +5,7 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 SCRIPT="$ROOT_DIR/root/usr/sbin/tailscale_openclash_bypass"
 TMP_DIR="${TMPDIR:-/tmp}/tailscale-openclash-test.$$"
 REAL_CHOWN="$(command -v chown)"
+REAL_DD="$(command -v dd)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
@@ -37,6 +38,24 @@ printf '%s\n' "$*" >>"${CHOWN_LOG:?}"
 exec "${REAL_CHOWN:?}" "$@"
 SH
 chmod +x "$TMP_DIR/bin/chown"
+cat >"$TMP_DIR/bin/dd" <<'SH'
+#!/bin/sh
+has_count=0
+has_skip=0
+for arg in "$@"; do
+	case "$arg" in
+		count=*) has_count=1 ;;
+		skip=*) has_skip=1 ;;
+	esac
+done
+if [ "${DD_FAIL_PREFIX:-0}" = 1 ] && [ "$has_count" = 1 ] && [ "$has_skip" = 0 ]; then
+	printf 'failed: %s\n' "$*" >>"${DD_LOG:?}"
+	exit 1
+fi
+printf 'passed: %s\n' "$*" >>"${DD_LOG:?}"
+exec "${REAL_DD:?}" "$@"
+SH
+chmod +x "$TMP_DIR/bin/dd"
 touch "$TMP_DIR/openclash-init"
 chmod +x "$TMP_DIR/openclash-init"
 HOOK="$TMP_DIR/openclash/custom/openclash_custom_firewall_rules.sh"
@@ -46,7 +65,8 @@ original_owner="$(file_owner "$HOOK")"
 original_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
 FLOCK_LOG="$TMP_DIR/flock.log"
 CHOWN_LOG="$TMP_DIR/chown.log"
-export FLOCK_LOG CHOWN_LOG REAL_CHOWN
+DD_LOG="$TMP_DIR/dd.log"
+export FLOCK_LOG CHOWN_LOG DD_LOG REAL_CHOWN REAL_DD
 
 run_helper() {
 	OPENCLASH_INIT="$TMP_DIR/openclash-init" \
@@ -55,9 +75,26 @@ run_helper() {
 	UCI_BIN="$TMP_DIR/bin/uci" \
 	NFT_BIN="$TMP_DIR/bin/nft" \
 	JQ_BIN=jq \
+	DD_FAIL_PREFIX="${DD_FAIL_PREFIX:-0}" \
 	PATH="$TMP_DIR/bin:$PATH" \
 	"$SCRIPT" "$@"
 }
+
+failed_reconcile_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+failed_reconcile_mode="$(file_mode "$HOOK")"
+failed_reconcile_owner="$(file_owner "$HOOK")"
+: >"$DD_LOG"
+if DD_FAIL_PREFIX=1 run_helper reconcile-hook; then
+	fail 'reconcile-hook must fail when prefix copy fails'
+fi
+DD_FAIL_PREFIX=0
+grep -F 'failed:' "$DD_LOG" >/dev/null || fail 'reconcile-hook did not execute the failing prefix copy'
+[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$failed_reconcile_hash" ] || \
+	fail 'reconcile-hook changed hook after prefix copy failure'
+[ "$(file_mode "$HOOK")" = "$failed_reconcile_mode" ] || \
+	fail 'reconcile-hook changed hook mode after prefix copy failure'
+[ "$(file_owner "$HOOK")" = "$failed_reconcile_owner" ] || \
+	fail 'reconcile-hook changed hook ownership after prefix copy failure'
 
 run_helper reconcile-hook
 assert_count 1 '# BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash' "$HOOK"
@@ -80,6 +117,22 @@ fi
 [ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$malformed_hash" ] || fail 'malformed hook changed after rejection'
 
 cp "$TMP_DIR/hook-before-malformed" "$HOOK"
+failed_cleanup_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+failed_cleanup_mode="$(file_mode "$HOOK")"
+failed_cleanup_owner="$(file_owner "$HOOK")"
+: >"$DD_LOG"
+if DD_FAIL_PREFIX=1 run_helper cleanup; then
+	fail 'cleanup must fail when prefix copy fails'
+fi
+DD_FAIL_PREFIX=0
+grep -F 'failed:' "$DD_LOG" >/dev/null || fail 'cleanup did not execute the failing prefix copy'
+[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$failed_cleanup_hash" ] || \
+	fail 'cleanup changed hook after prefix copy failure'
+[ "$(file_mode "$HOOK")" = "$failed_cleanup_mode" ] || \
+	fail 'cleanup changed hook mode after prefix copy failure'
+[ "$(file_owner "$HOOK")" = "$failed_cleanup_owner" ] || \
+	fail 'cleanup changed hook ownership after prefix copy failure'
+
 : >"$FLOCK_LOG"
 : >"$CHOWN_LOG"
 run_helper cleanup

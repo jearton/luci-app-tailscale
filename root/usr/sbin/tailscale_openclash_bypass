@@ -72,8 +72,19 @@ finish_replacement() {
 	mode="$2"
 	owner="$3"
 
-	if ! sh -n "$temp_file" || ! chmod "$mode" "$temp_file" || ! chown "$owner" "$temp_file" || \
-		! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
+	if ! sh -n "$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+	if ! chmod "$mode" "$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+	if ! chown "$owner" "$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+	if ! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
 		rm -f "$temp_file"
 		return 1
 	fi
@@ -83,11 +94,23 @@ reconcile_hook() {
 	if [ ! -e "$OPENCLASH_HOOK_FILE" ]; then
 		mkdir -p "$(dirname "$OPENCLASH_HOOK_FILE")" || return 1
 		temp_file="$(new_temp_file)" || return 1
-		if ! {
-			printf '#!/bin/sh\n'
-			managed_block
-		} >"$temp_file" || ! sh -n "$temp_file" || ! chmod 0755 "$temp_file" || \
-			! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
+		if ! printf '#!/bin/sh\n' >"$temp_file"; then
+			rm -f "$temp_file"
+			return 1
+		fi
+		if ! managed_block >>"$temp_file"; then
+			rm -f "$temp_file"
+			return 1
+		fi
+		if ! sh -n "$temp_file"; then
+			rm -f "$temp_file"
+			return 1
+		fi
+		if ! chmod 0755 "$temp_file"; then
+			rm -f "$temp_file"
+			return 1
+		fi
+		if ! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
 			rm -f "$temp_file"
 			return 1
 		fi
@@ -102,11 +125,15 @@ reconcile_hook() {
 	owner="$(file_owner "$OPENCLASH_HOOK_FILE")" || return 1
 	temp_file="$(new_temp_file)" || return 1
 
-	if ! {
-		dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$insertion_offset" 2>/dev/null
-		managed_block
-		dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$insertion_offset" 2>/dev/null
-	} >"$temp_file"; then
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$insertion_offset" 2>/dev/null >"$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+	if ! managed_block >>"$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$insertion_offset" 2>/dev/null >>"$temp_file"; then
 		rm -f "$temp_file"
 		return 1
 	fi
@@ -132,10 +159,11 @@ cleanup_hook() {
 	owner="$(file_owner "$OPENCLASH_HOOK_FILE")" || return 1
 	temp_file="$(new_temp_file)" || return 1
 
-	if ! {
-		dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$begin_offset" 2>/dev/null
-		dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$suffix_offset" 2>/dev/null
-	} >"$temp_file"; then
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$begin_offset" 2>/dev/null >"$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$suffix_offset" 2>/dev/null >>"$temp_file"; then
 		rm -f "$temp_file"
 		return 1
 	fi
