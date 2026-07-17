@@ -121,8 +121,23 @@ set -eu
 
 printf '%s\n' "$*" >>"${UCI_LOG:?}"
 case "$*" in
+	'-q show tailscale_openclash.settings')
+		case "${UCI_SECTION_MODE:-present}" in
+			present)
+				printf '%s\n' 'tailscale_openclash.settings=openclash'
+				[ -z "${FEATURE_ENABLED:-}" ] || \
+					printf "tailscale_openclash.settings.enabled='%s'\n" "$FEATURE_ENABLED"
+				;;
+			missing) exit 1 ;;
+			error) exit 74 ;;
+			malformed) printf '%s\n' 'malformed uci section output' ;;
+			*) exit 99 ;;
+		esac
+		;;
 	'-q get tailscale_openclash.settings.enabled')
 		printf 'value:%s\n' "${FEATURE_ENABLED:-default}" >>"${UCI_LOG:?}"
+		[ "${UCI_SECTION_MODE:-present}" = present ] || exit 1
+		[ "${UCI_OPTION_GET_FAIL:-0}" = 0 ] || exit 75
 		if [ -n "${UCI_READY_FILE:-}" ]; then
 			: >"$UCI_READY_FILE"
 			while [ ! -e "${UCI_RELEASE_FILE:?}" ]; do sleep 0.05; done
@@ -147,10 +162,57 @@ cat >"$TMP_DIR/bin/nft" <<'SH'
 set -eu
 
 state="${NFT_STATE:?}"
+guard_state="${NFT_GUARD_STATE:?}"
 batch_log="${NFT_BATCH_LOG:?}"
 call_log="${NFT_CALL_LOG:?}"
+table_state="${NFT_TABLE_STATE:-PRESENT}"
 
 printf '%s\n' "$*" >>"$call_log"
+
+print_rule_json() {
+	handle="$1"
+	rule="$2"
+	rest="${rule#insert rule inet fw4 }"
+	rule_chain="${rest%% *}"
+	comment="$(printf '%s\n' "$rule" | sed -n 's/.*comment "\(.*\)" return$/\1/p')"
+	[ -n "$comment" ] || return 0
+	json_chain="$rule_chain"
+	case "$rule" in
+		*' meta mark & 0x00ff0000 == 0x00080000 counter comment '*)
+			match_json='{"match":{"op":"==","left":{"&":[{"meta":{"key":"mark"}},16711680]},"right":524288}}'
+			;;
+		*' iifname "tailscale0" counter comment '*)
+			match_json='{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"tailscale0"}}'
+			;;
+		*)
+			match_json='{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"unrelated0"}}'
+			;;
+	esac
+	counter_json="{\"counter\":{\"packets\":${NFT_COUNTER_PACKETS:-0},\"bytes\":${NFT_COUNTER_BYTES:-0}}}"
+	verdict_json='{"return":null}'
+	case "$comment" in
+		luci-app-tailscale:*)
+			case "${NFT_RULE_JSON_MODE:-canonical}" in
+				altered-match)
+					match_json='{"match":{"op":"==","left":{"meta":{"key":"mark"}},"right":0}}'
+					;;
+				overbroad) match_json= ;;
+				incomplete) verdict_json= ;;
+				altered-verdict) verdict_json='{"accept":null}' ;;
+				wrong-chain) json_chain='wrong_chain' ;;
+			esac
+			;;
+	esac
+	if [ -n "$match_json" ] && [ -n "$verdict_json" ]; then
+		expr_json="[$match_json,$counter_json,$verdict_json]"
+	elif [ -n "$match_json" ]; then
+		expr_json="[$match_json,$counter_json]"
+	else
+		expr_json="[$counter_json,$verdict_json]"
+	fi
+	printf ',{"rule":{"family":"inet","table":"fw4","chain":"%s","handle":%s,"expr":%s,"comment":"%s"}}' \
+		"$json_chain" "$handle" "$expr_json" "$comment"
+}
 
 print_chain_json() {
 	chain="$1"
@@ -160,10 +222,7 @@ print_chain_json() {
 			"insert rule inet fw4 $chain "*) ;;
 			*) continue ;;
 		esac
-		comment="$(printf '%s\n' "$rule" | sed -n 's/.*comment "\(.*\)" return$/\1/p')"
-		[ -n "$comment" ] || continue
-		printf ',{"rule":{"family":"inet","table":"fw4","chain":"%s","comment":"%s","handle":%s}}' \
-			"$chain" "$comment" "$handle"
+		print_rule_json "$handle" "$rule"
 	done <"$state"
 	printf ']}\n'
 }
@@ -197,20 +256,67 @@ delete_rule_from_state() {
 	mv "$temp_file" "$state_file"
 }
 
-apply_batch() {
+delete_counter_from_state() {
+	state_file="$1"
+	counter="$2"
+	temp_file="$(mktemp "${state_file}.XXXXXX")"
+	found=0
+	while IFS= read -r stored_counter || [ -n "$stored_counter" ]; do
+		if [ "$stored_counter" = "$counter" ]; then
+			found=$((found + 1))
+			continue
+		fi
+		printf '%s\n' "$stored_counter" >>"$temp_file"
+	done <"$state_file"
+	if [ "$found" -ne 1 ]; then
+		printf 'nonexistent nft counter: %s\n' "$counter" >&2
+		rm -f "$temp_file"
+		return 1
+	fi
+	mv "$temp_file" "$state_file"
+}
+
+replace_table_generation() {
 	batch="$1"
-	next_state="$(mktemp "${state}.next.XXXXXX")"
-	cp "$state" "$next_state"
-	operation=0
+	replacement="$(mktemp "${state}.replacement.XXXXXX")"
 	while IFS= read -r statement || [ -n "$statement" ]; do
-		operation=$((operation + 1))
 		case "$statement" in
 			'delete rule inet fw4 '*)
 				rest="${statement#delete rule inet fw4 }"
 				chain="${rest%% handle *}"
 				handle="${rest##* handle }"
+				printf '%s|insert rule inet fw4 %s counter comment "unrelated-generation-rule-%s" return\n' \
+					"$handle" "$chain" "$handle" >>"$replacement"
+				;;
+		esac
+	done <"$batch"
+	mv "$replacement" "$state"
+	: >"$guard_state"
+}
+
+apply_batch() {
+	batch="$1"
+	next_state="$(mktemp "${state}.next.XXXXXX")"
+	next_guard_state="$(mktemp "${guard_state}.next.XXXXXX")"
+	cp "$state" "$next_state"
+	cp "$guard_state" "$next_guard_state"
+	operation=0
+	while IFS= read -r statement || [ -n "$statement" ]; do
+		operation=$((operation + 1))
+		case "$statement" in
+			'delete counter inet fw4 '*)
+				counter="${statement#delete counter inet fw4 }"
+				if ! delete_counter_from_state "$next_guard_state" "$counter"; then
+					rm -f "$next_state" "$next_guard_state"
+					return 1
+				fi
+				;;
+			'delete rule inet fw4 '*)
+				rest="${statement#delete rule inet fw4 }"
+				chain="${rest%% handle *}"
+				handle="${rest##* handle }"
 				if ! delete_rule_from_state "$next_state" "$chain" "$handle"; then
-					rm -f "$next_state"
+					rm -f "$next_state" "$next_guard_state"
 					return 1
 				fi
 				;;
@@ -220,16 +326,17 @@ apply_batch() {
 				;;
 			*)
 				printf 'unsupported fake nft statement: %s\n' "$statement" >&2
-				rm -f "$next_state"
+				rm -f "$next_state" "$next_guard_state"
 				exit 99
 				;;
 		esac
 		if [ "${NFT_BATCH_FAIL_AFTER:-0}" = "$operation" ]; then
-			rm -f "$next_state"
+			rm -f "$next_state" "$next_guard_state"
 			exit 1
 		fi
 	done <"$batch"
 	mv "$next_state" "$state"
+	mv "$next_guard_state" "$guard_state"
 }
 
 print_table_json() {
@@ -241,12 +348,48 @@ print_table_json() {
 		fi
 		printf ',{"chain":{"family":"inet","table":"fw4","name":"%s"}}' "$chain"
 	done
+	while IFS='|' read -r handle rule || [ -n "${handle:-}" ]; do
+		rest="${rule#insert rule inet fw4 }"
+		chain="${rest%% *}"
+		[ "${MISSING_CHAIN:-}" = "$chain" ] && continue
+		if [ -s "${NFT_DISAPPEARED_FILE:?}" ] && grep -Fx "$chain" "$NFT_DISAPPEARED_FILE" >/dev/null; then
+			continue
+		fi
+		print_rule_json "$handle" "$rule"
+	done <"$state"
 	printf ']}\n'
 }
 
+print_table_inventory_json() {
+	case "$table_state" in
+		TABLE_ABSENT)
+			printf '%s\n' '{"nftables":[{"table":{"family":"inet","name":"other"}}]}'
+			;;
+		*)
+			printf '%s\n' '{"nftables":[{"table":{"family":"inet","name":"fw4"}}]}'
+			;;
+	esac
+}
+
+if [ "$#" = 3 ] && [ "$1" = '-j' ] && [ "$2" = 'list' ] && [ "$3" = 'tables' ]; then
+	case "$table_state" in
+		INVENTORY_READ_ERROR) exit 73 ;;
+		INVENTORY_MALFORMED) printf '%s\n' 'not-json'; exit 0 ;;
+	esac
+	if [ "${REFRESH_INVENTORY_ERROR:-0}" = 1 ] && \
+		[ "$(grep -Fxc -- '-j list tables' "$call_log")" -gt 1 ]; then
+		exit 73
+	fi
+	print_table_inventory_json
+	exit 0
+fi
+
 if [ "$#" = 5 ] && [ "$1" = '-j' ] && [ "$2" = 'list' ] && [ "$3" = 'table' ] && \
 	[ "$4" = 'inet' ] && [ "$5" = 'fw4' ]; then
-	[ "${NFT_TABLE_MISSING:-0}" = 1 ] && exit 1
+	case "$table_state" in
+		TABLE_ABSENT|TABLE_READ_ERROR|INVENTORY_READ_ERROR|INVENTORY_MALFORMED) exit 72 ;;
+		TABLE_MALFORMED) printf '%s\n' 'not-json'; exit 0 ;;
+	esac
 	if [ "${NFT_JSON_UNSUPPORTED:-0}" = 1 ]; then
 		printf 'not-json\n'
 	else
@@ -258,6 +401,7 @@ fi
 if [ "$#" = 7 ] && [ "$1" = '-j' ] && [ "$2" = '-a' ] && [ "$3" = 'list' ] && \
 	[ "$4" = 'chain' ] && [ "$5" = 'inet' ] && [ "$6" = 'fw4' ]; then
 	chain="$7"
+	[ "$table_state" = PRESENT ] || exit 72
 	target_chain "$chain" || {
 		printf 'unsupported fake nft chain: %s\n' "$chain" >&2
 		exit 99
@@ -277,6 +421,21 @@ if [ "$#" = 7 ] && [ "$1" = '-j' ] && [ "$2" = '-a' ] && [ "$3" = 'list' ] && \
 	exit 0
 fi
 
+if [ "$#" = 5 ] && [ "$1" = 'add' ] && [ "$2" = 'counter' ] && \
+	[ "$3" = 'inet' ] && [ "$4" = 'fw4' ]; then
+	[ "$table_state" = PRESENT ] || exit 72
+	grep -Fx "$5" "$guard_state" >/dev/null 2>&1 && exit 1
+	printf '%s\n' "$5" >>"$guard_state"
+	exit 0
+fi
+
+if [ "$#" = 5 ] && [ "$1" = 'delete' ] && [ "$2" = 'counter' ] && \
+	[ "$3" = 'inet' ] && [ "$4" = 'fw4' ]; then
+	[ "$table_state" = PRESENT ] || exit 72
+	delete_counter_from_state "$guard_state" "$5"
+	exit $?
+fi
+
 if [ "$#" = 2 ] && [ "$1" = '-f' ]; then
 	cat "$2" >"$batch_log"
 	[ "${NFT_BATCH_FAIL:-0}" = 1 ] && exit 1
@@ -284,16 +443,8 @@ if [ "$#" = 2 ] && [ "$1" = '-f' ]; then
 		kill -TERM "$PPID"
 		exit 1
 	fi
-	if [ "${NFT_GENERATION_RACE:-0}" = 1 ]; then
-		first_delete="$(sed -n '1p' "$2")"
-		case "$first_delete" in
-			'delete rule inet fw4 '*)
-				rest="${first_delete#delete rule inet fw4 }"
-				chain="${rest%% handle *}"
-				handle="${rest##* handle }"
-				delete_rule_from_state "$state" "$chain" "$handle"
-				;;
-		esac
+	if [ "${NFT_GENERATION_REPLACE:-0}" = 1 ]; then
+		replace_table_generation "$2"
 	fi
 	apply_batch "$2"
 	exit 0
@@ -319,19 +470,21 @@ CHOWN_LOG="$TMP_DIR/chown.log"
 REPLACEMENT_LOG="$TMP_DIR/replacement.log"
 DD_LOG="$TMP_DIR/dd.log"
 NFT_STATE="$TMP_DIR/nft.state"
+NFT_GUARD_STATE="$TMP_DIR/nft.guards"
 NFT_BATCH_LOG="$TMP_DIR/nft.batch"
 NFT_CALL_LOG="$TMP_DIR/nft.calls"
 NFT_DISAPPEARED_FILE="$TMP_DIR/nft.disappeared"
 UCI_LOG="$TMP_DIR/uci.log"
 LOGGER_LOG="$TMP_DIR/logger.log"
 : >"$NFT_STATE"
+: >"$NFT_GUARD_STATE"
 : >"$NFT_BATCH_LOG"
 : >"$NFT_CALL_LOG"
 : >"$NFT_DISAPPEARED_FILE"
 : >"$UCI_LOG"
 : >"$LOGGER_LOG"
 export CHOWN_LOG REPLACEMENT_LOG DD_LOG REAL_CHOWN REAL_CHMOD REAL_DD REAL_GREP
-export NFT_STATE NFT_BATCH_LOG NFT_CALL_LOG NFT_DISAPPEARED_FILE UCI_LOG LOGGER_LOG
+export NFT_STATE NFT_GUARD_STATE NFT_BATCH_LOG NFT_CALL_LOG NFT_DISAPPEARED_FILE UCI_LOG LOGGER_LOG
 
 run_helper() {
 	OPENCLASH_INIT="$TMP_DIR/openclash-init" \
@@ -345,6 +498,13 @@ run_helper() {
 	DD_FAIL_PREFIX="${DD_FAIL_PREFIX:-0}" \
 	DD_SIGNAL_PARENT="${DD_SIGNAL_PARENT:-0}" \
 	FEATURE_ENABLED="${FEATURE_ENABLED:-}" \
+	UCI_SECTION_MODE="${UCI_SECTION_MODE:-present}" \
+	UCI_OPTION_GET_FAIL="${UCI_OPTION_GET_FAIL:-0}" \
+	NFT_TABLE_STATE="${NFT_TABLE_STATE:-PRESENT}" \
+	REFRESH_INVENTORY_ERROR="${REFRESH_INVENTORY_ERROR:-0}" \
+	NFT_RULE_JSON_MODE="${NFT_RULE_JSON_MODE:-canonical}" \
+	NFT_COUNTER_PACKETS="${NFT_COUNTER_PACKETS:-0}" \
+	NFT_COUNTER_BYTES="${NFT_COUNTER_BYTES:-0}" \
 	PATH="$TMP_DIR/bin:$PATH" \
 	"$SCRIPT" "$@"
 }
@@ -478,12 +638,21 @@ assert_count 1 'insert rule inet fw4 openclash_mangle_output ' "$NFT_BATCH_LOG"
 assert_count 1 'insert rule inet fw4 openclash_output ' "$NFT_BATCH_LOG"
 assert_count 1 'insert rule inet fw4 openclash_mangle iifname "tailscale0"' "$NFT_BATCH_LOG"
 assert_count 1 'insert rule inet fw4 openclash iifname "tailscale0"' "$NFT_BATCH_LOG"
+assert_count 1 '-j list tables' "$NFT_CALL_LOG"
 assert_count 1 '-j list table inet fw4' "$NFT_CALL_LOG"
 assert_line_count 1 '-j -a list chain inet fw4 openclash_mangle_output' "$NFT_CALL_LOG"
 assert_line_count 1 '-j -a list chain inet fw4 openclash_output' "$NFT_CALL_LOG"
 assert_line_count 1 '-j -a list chain inet fw4 openclash_mangle' "$NFT_CALL_LOG"
 assert_line_count 1 '-j -a list chain inet fw4 openclash' "$NFT_CALL_LOG"
 assert_count 1 '-f ' "$NFT_CALL_LOG"
+guard_name="$(sed -n 's/^add counter inet fw4 //p' "$NFT_CALL_LOG")"
+[ -n "$guard_name" ] || fail 'apply must create a named counter before caching owned handles'
+[ "$(sed -n '1p' "$NFT_BATCH_LOG")" = "delete counter inet fw4 $guard_name" ] || \
+	fail 'the guard deletion must be the first statement in the reconciliation batch'
+[ ! -s "$NFT_GUARD_STATE" ] || fail 'successful reconciliation leaked its table-generation guard'
+guard_add_line="$(grep -nFx "add counter inet fw4 $guard_name" "$NFT_CALL_LOG" | cut -d: -f1)"
+first_chain_line="$(grep -nF -- '-j -a list chain inet fw4 ' "$NFT_CALL_LOG" | head -n 1 | cut -d: -f1)"
+[ "$guard_add_line" -lt "$first_chain_line" ] || fail 'apply cached rule handles before creating its table-generation guard'
 grep -F 'comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）" return' "$NFT_BATCH_LOG" >/dev/null || \
 	fail 'mangle output rule comment is not exact'
 grep -F 'comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（output）" return' "$NFT_BATCH_LOG" >/dev/null || \
@@ -507,6 +676,38 @@ printf '%s' "$(run_helper status)" | jq -e '
 [ ! -s "$NFT_BATCH_LOG" ] || fail 'status mutated nftables state'
 [ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$hook_before_status" ] || fail 'status rewrote the hook'
 [ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$state_before_status" ] || fail 'status rewrote nftables state'
+
+sed 's#^[[:space:]]*/usr/sbin/tailscale_openclash_bypass apply$#\tprintf stale-status-hook#' "$HOOK" >"$TMP_DIR/stale-status-hook"
+chmod 750 "$TMP_DIR/stale-status-hook"
+mv "$TMP_DIR/stale-status-hook" "$HOOK"
+printf '%s' "$(run_helper status)" | jq -e '.state == "error" and .hook == "error"' >/dev/null || \
+	fail 'status accepted a noncanonical managed hook body'
+run_helper reconcile-hook
+
+for invalid_rule_mode in altered-match overbroad incomplete altered-verdict wrong-chain; do
+	printf '%s' "$(NFT_RULE_JSON_MODE="$invalid_rule_mode" run_helper status)" | \
+		jq -e '.state == "error" and .rules_present == 4' >/dev/null || \
+		fail "status accepted noncanonical owned rule JSON mode $invalid_rule_mode"
+done
+NFT_RULE_JSON_MODE=canonical
+
+printf '%s' "$(NFT_COUNTER_PACKETS=123456 NFT_COUNTER_BYTES=987654321 run_helper status)" | \
+	jq -e '.state == "active" and .rules_present == 4' >/dev/null || \
+	fail 'dynamic counter values changed canonical rule validation'
+NFT_COUNTER_PACKETS=0
+NFT_COUNTER_BYTES=0
+
+cp "$NFT_STATE" "$TMP_DIR/nft-before-duplicate-status"
+printf '%s\n' '901|insert rule inet fw4 openclash_mangle_output meta mark & 0x00ff0000 == 0x00080000 counter comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）" return' >>"$NFT_STATE"
+printf '%s' "$(run_helper status)" | jq -e '.state == "error" and .rules_present == 5' >/dev/null || \
+	fail 'status accepted a duplicated canonical owned rule'
+mv "$TMP_DIR/nft-before-duplicate-status" "$NFT_STATE"
+
+cp "$NFT_STATE" "$TMP_DIR/nft-before-unexpected-status"
+printf '%s\n' '902|insert rule inet fw4 openclash iifname "tailscale0" counter comment "luci-app-tailscale: unexpected owned rule" return' >>"$NFT_STATE"
+printf '%s' "$(run_helper status)" | jq -e '.state == "error" and .rules_present == 5' >/dev/null || \
+	fail 'status ignored an unexpected package-owned rule'
+mv "$TMP_DIR/nft-before-unexpected-status" "$NFT_STATE"
 
 : >"$NFT_BATCH_LOG"
 : >"$NFT_CALL_LOG"
@@ -541,6 +742,7 @@ if NFT_BATCH_FAIL=1 run_helper apply; then
 	fail 'apply must fail when the nft batch fails'
 fi
 NFT_BATCH_FAIL=0
+[ ! -s "$NFT_GUARD_STATE" ] || fail 'failed reconciliation leaked its table-generation guard'
 [ -s "$NFT_BATCH_LOG" ] || fail 'failed apply did not submit an nft batch'
 [ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$state_before_failed_batch" ] || \
 	fail 'failed nft batch changed state'
@@ -565,17 +767,21 @@ fi
 NFT_SIGNAL_PARENT=0
 find "$TMP_DIR/tmp" -name 'tailscale-openclash-nft.*' -print | grep . >/dev/null && \
 	fail 'terminated nft reconciliation left a tracked temporary path'
+[ ! -s "$NFT_GUARD_STATE" ] || fail 'terminated reconciliation leaked its table-generation guard'
 
 : >"$NFT_BATCH_LOG"
-if NFT_GENERATION_RACE=1 run_helper apply >/dev/null 2>&1; then
-	fail 'apply must fail when a cached nft handle disappears before the transaction'
+if NFT_GENERATION_REPLACE=1 run_helper apply >/dev/null 2>&1; then
+	fail 'apply must fail when inet fw4 is replaced after owned handles are cached'
 fi
-NFT_GENERATION_RACE=0
-[ "$(grep -c 'insert rule inet fw4' "$NFT_STATE")" = 3 ] || \
-	fail 'generation race must expose one external deletion without partially applying the batch'
+NFT_GENERATION_REPLACE=0
+[ "$(grep -c 'unrelated-generation-rule-' "$NFT_STATE")" = 4 ] || \
+	fail 'table replacement transaction deleted unrelated rules that reused cached handles'
+[ ! -s "$NFT_GUARD_STATE" ] || fail 'table replacement failure leaked its stale guard state'
 run_helper apply
-[ "$(grep -c 'insert rule inet fw4' "$NFT_STATE")" = 4 ] || \
-	fail 'apply did not recover after the deterministic generation race'
+[ "$(grep -c 'comment "luci-app-tailscale:' "$NFT_STATE")" = 4 ] || \
+	fail 'apply did not recover after the deterministic table replacement'
+[ "$(grep -c 'unrelated-generation-rule-' "$NFT_STATE")" = 4 ] || \
+	fail 'recovery after table replacement removed unrelated rules'
 
 for false_alias in 0 false off no disabled; do
 	FEATURE_ENABLED=1 run_helper sync
@@ -585,24 +791,102 @@ for false_alias in 0 false off no disabled; do
 	managed_hook_present "$HOOK" && \
 		fail "false alias $false_alias left the managed hook"
 	printf '%s' "$(FEATURE_ENABLED="$false_alias" run_helper status)" | \
-		jq -e '.state == "disabled" and .enabled == false' >/dev/null || \
+		jq -e '.state == "disabled" and .enabled == false and .hook == "absent" and .rules_present == 0' >/dev/null || \
 		fail "false alias $false_alias did not report disabled"
 done
+
+: >"$UCI_LOG"
+FEATURE_ENABLED= UCI_SECTION_MODE=present run_helper sync
+assert_line_count 1 '-q show tailscale_openclash.settings' "$UCI_LOG"
+assert_line_count 0 '-q get tailscale_openclash.settings.enabled' "$UCI_LOG"
+printf '%s' "$(FEATURE_ENABLED= UCI_SECTION_MODE=present run_helper status)" | \
+	jq -e '.state == "active" and .enabled == true' >/dev/null || \
+	fail 'a verified absent enabled option did not use the enabled default'
+
+for uci_failure in missing error malformed; do
+	printf '#!/bin/sh\nprintf user-only\n' >"$HOOK"
+	: >"$NFT_STATE"
+	: >"$NFT_BATCH_LOG"
+	uci_failure_hook_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+	uci_failure_state_hash="$(sha256sum "$NFT_STATE" | awk '{print $1}')"
+	if UCI_SECTION_MODE="$uci_failure" FEATURE_ENABLED=1 run_helper sync; then
+		fail "UCI section state $uci_failure must make sync fail"
+	fi
+	[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$uci_failure_hook_hash" ] || \
+		fail "UCI section state $uci_failure changed the managed hook"
+	[ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$uci_failure_state_hash" ] || \
+		fail "UCI section state $uci_failure changed nft state"
+	[ ! -s "$NFT_BATCH_LOG" ] || fail "UCI section state $uci_failure submitted an nft batch"
+	printf '%s' "$(UCI_SECTION_MODE="$uci_failure" FEATURE_ENABLED=1 run_helper status)" | \
+		jq -e '.state == "error" and .enabled == false' >/dev/null || \
+		fail "UCI section state $uci_failure did not report error"
+done
+UCI_SECTION_MODE=present
 
 printf '#!/bin/sh\nprintf user-only\n' >"$HOOK"
 : >"$NFT_STATE"
 : >"$NFT_BATCH_LOG"
+uci_get_failure_hook_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+uci_get_failure_state_hash="$(sha256sum "$NFT_STATE" | awk '{print $1}')"
+if UCI_OPTION_GET_FAIL=1 FEATURE_ENABLED=1 run_helper sync; then
+	fail 'an operational failure reading a present enabled option must make sync fail'
+fi
+[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$uci_get_failure_hook_hash" ] || \
+	fail 'an enabled-option read failure changed the managed hook'
+[ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$uci_get_failure_state_hash" ] || \
+	fail 'an enabled-option read failure changed nft state'
+[ ! -s "$NFT_BATCH_LOG" ] || fail 'an enabled-option read failure submitted an nft batch'
+printf '%s' "$(UCI_OPTION_GET_FAIL=1 FEATURE_ENABLED=1 run_helper status)" | \
+	jq -e '.state == "error" and .enabled == false' >/dev/null || \
+	fail 'an enabled-option read failure did not report error'
+UCI_OPTION_GET_FAIL=0
+
+printf '#!/bin/sh\nprintf user-only\n' >"$HOOK"
+: >"$NFT_STATE"
+: >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
 unsupported_hook_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
 unsupported_state_hash="$(sha256sum "$NFT_STATE" | awk '{print $1}')"
-NFT_TABLE_MISSING=1 FEATURE_ENABLED=1 run_helper sync
-NFT_TABLE_MISSING=0
+NFT_TABLE_STATE=TABLE_ABSENT FEATURE_ENABLED=1 run_helper sync
 [ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$unsupported_hook_hash" ] || \
 	fail 'unsupported firewall4 sync changed the OpenClash hook'
 [ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$unsupported_state_hash" ] || \
 	fail 'unsupported firewall4 sync changed nft state'
 [ ! -s "$NFT_BATCH_LOG" ] || fail 'unsupported firewall4 sync submitted an nft batch'
-printf '%s' "$(NFT_TABLE_MISSING=1 FEATURE_ENABLED=1 run_helper status)" | jq -e '.state == "unsupported"' >/dev/null || \
+assert_line_count 1 '-j list tables' "$NFT_CALL_LOG"
+assert_line_count 0 '-j list table inet fw4' "$NFT_CALL_LOG"
+printf '%s' "$(NFT_TABLE_STATE=TABLE_ABSENT FEATURE_ENABLED=1 run_helper status)" | jq -e '.state == "unsupported"' >/dev/null || \
 	fail 'missing firewall4 table did not report unsupported'
+
+: >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
+NFT_TABLE_STATE=TABLE_ABSENT FEATURE_ENABLED=1 run_helper apply
+[ ! -s "$NFT_BATCH_LOG" ] || fail 'verified absent firewall4 apply submitted an nft batch'
+assert_line_count 1 '-j list tables' "$NFT_CALL_LOG"
+assert_line_count 0 '-j list table inet fw4' "$NFT_CALL_LOG"
+
+for table_failure in INVENTORY_READ_ERROR INVENTORY_MALFORMED TABLE_READ_ERROR TABLE_MALFORMED; do
+	printf '#!/bin/sh\nprintf user-only\n' >"$HOOK"
+	: >"$NFT_STATE"
+	for helper_command in sync apply cleanup; do
+		: >"$NFT_BATCH_LOG"
+		table_failure_hook_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+		table_failure_state_hash="$(sha256sum "$NFT_STATE" | awk '{print $1}')"
+		if NFT_TABLE_STATE="$table_failure" FEATURE_ENABLED=1 run_helper "$helper_command"; then
+			fail "$helper_command must fail for nft table state $table_failure"
+		fi
+		[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$table_failure_hook_hash" ] || \
+			fail "$helper_command changed the hook for nft table state $table_failure"
+		[ "$(sha256sum "$NFT_STATE" | awk '{print $1}')" = "$table_failure_state_hash" ] || \
+			fail "$helper_command changed nft state for nft table state $table_failure"
+		[ ! -s "$NFT_BATCH_LOG" ] || \
+			fail "$helper_command submitted an nft batch for nft table state $table_failure"
+	done
+	printf '%s' "$(NFT_TABLE_STATE="$table_failure" FEATURE_ENABLED=1 run_helper status)" | \
+		jq -e '.state == "error"' >/dev/null || \
+		fail "nft table state $table_failure did not report error"
+done
+NFT_TABLE_STATE=PRESENT
 
 rm -f "$TMP_DIR/openclash-init"
 absent_hook_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
@@ -677,8 +961,21 @@ if NFT_BATCH_FAIL=1 run_helper cleanup; then
 fi
 NFT_BATCH_FAIL=0
 grep -F 'luci-app-tailscale:' "$NFT_STATE" >/dev/null || fail 'failed cleanup batch changed owned nft rules'
-managed_hook_present "$HOOK" && fail 'cleanup did not run hook cleanup before the nft batch'
-run_helper reconcile-hook
+managed_hook_present "$HOOK" || fail 'failed nft cleanup must retain the managed hook for retry'
+printf '%s' "$(FEATURE_ENABLED=0 run_helper status)" | jq -e '
+	.state == "error" and .enabled == false and .hook == "managed" and
+	.rules_present == 4
+' >/dev/null || fail 'disabled status did not expose retained cleanup artifacts'
+
+FEATURE_ENABLED=0 run_helper sync
+grep -F 'luci-app-tailscale:' "$NFT_STATE" >/dev/null && fail 'cleanup retry left owned nft rules'
+managed_hook_present "$HOOK" && fail 'cleanup retry left the managed hook'
+printf '%s' "$(FEATURE_ENABLED=0 run_helper status)" | jq -e '
+	.state == "disabled" and .enabled == false and .hook == "absent" and
+	.rules_present == 0
+' >/dev/null || fail 'successful cleanup retry did not report a residue-free disabled state'
+
+FEATURE_ENABLED=1 run_helper sync
 printf '%s\n' '900|insert rule inet fw4 openclash iifname "tailscale0" counter comment "user-owned-rule" return' >>"$NFT_STATE"
 run_helper cleanup
 grep -F 'luci-app-tailscale:' "$NFT_STATE" >/dev/null && fail 'cleanup left owned nft rules'
@@ -687,8 +984,8 @@ managed_hook_present "$HOOK" && fail 'cleanup left the managed hook block'
 
 FEATURE_ENABLED=1 run_helper sync
 : >"$NFT_BATCH_LOG"
-NFT_TABLE_MISSING=1 run_helper cleanup
-NFT_TABLE_MISSING=0
+NFT_TABLE_STATE=TABLE_ABSENT run_helper cleanup
+NFT_TABLE_STATE=PRESENT
 [ ! -s "$NFT_BATCH_LOG" ] || fail 'cleanup with an absent fw4 table submitted an nft batch'
 : >"$NFT_STATE"
 
@@ -725,12 +1022,12 @@ rmdir "$HOOK"
 printf '%s\n' '# BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash' >>"$HOOK"
 printf '%s' "$(run_helper status)" | jq -e '.state == "error"' >/dev/null || \
 	fail 'malformed markers did not report error'
-printf '%s' "$(NFT_TABLE_MISSING=1 FEATURE_ENABLED=0 run_helper status)" | jq -e '.state == "unsupported"' >/dev/null || \
+printf '%s' "$(NFT_TABLE_STATE=TABLE_ABSENT FEATURE_ENABLED=0 run_helper status)" | jq -e '.state == "unsupported"' >/dev/null || \
 	fail 'unsupported firewall4 state did not take precedence over disabled and malformed states'
-printf '%s' "$(NFT_JSON_UNSUPPORTED=1 FEATURE_ENABLED=0 run_helper status)" | jq -e '.state == "unsupported"' >/dev/null || \
-	fail 'unsupported nft JSON did not report unsupported'
+printf '%s' "$(NFT_JSON_UNSUPPORTED=1 FEATURE_ENABLED=0 run_helper status)" | jq -e '.state == "error"' >/dev/null || \
+	fail 'malformed nft JSON did not report error'
 rm -f "$TMP_DIR/openclash-init"
-printf '%s' "$(NFT_TABLE_MISSING=1 run_helper status)" | jq -e '.state == "absent"' >/dev/null || \
+printf '%s' "$(NFT_TABLE_STATE=TABLE_ABSENT run_helper status)" | jq -e '.state == "absent"' >/dev/null || \
 	fail 'OpenClash absence did not take status precedence'
 grep -F 'firewall' "$UCI_LOG" >/dev/null && fail 'helper queried the firewall UCI package'
 
