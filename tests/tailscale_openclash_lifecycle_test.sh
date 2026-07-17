@@ -31,9 +31,8 @@ SH
 chmod +x "$TMP_DIR/fake-helper"
 
 run_service() {
-	desired_enabled="$1"
-	service_entrypoint="$2"
-	script_path="${3:-$INIT_SCRIPT}"
+	service_entrypoint="$1"
+	script_path="${2:-$INIT_SCRIPT}"
 	FAKE_HELPER_LOG="$TMP_DIR/helper.log"
 	: >"$FAKE_HELPER_LOG"
 	export FAKE_HELPER_LOG
@@ -44,27 +43,15 @@ run_service() {
 		PROG="$TMP_DIR/fake-helper"
 
 		config_load() {
-			[ "$#" -eq 1 ] || fail 'config_load must receive exactly one package name'
-			[ "$1" = "tailscale_openclash" ] || \
-				fail 'start lifecycle must load the tailscale_openclash UCI package'
+			fail 'procd lifecycle must leave UCI reads to the locked helper sync command'
 		}
 
 		config_foreach() {
-			[ "$#" -eq 2 ] || fail 'config_foreach must receive a callback and section type'
-			[ "$1" = "sync_instance" ] || \
-				fail 'start lifecycle must dispatch through sync_instance'
-			[ "$2" = "openclash" ] || \
-				fail 'start lifecycle must iterate openclash sections only'
-			"$1" settings
+			fail 'procd lifecycle must not split helper sync by UCI section'
 		}
 
 		config_get_bool() {
-			[ "$#" -eq 4 ] || fail 'enabled lookup must include a default value'
-			[ "$1" = "enabled" ] || fail 'enabled lookup must set the enabled variable'
-			[ "$2" = "settings" ] || fail 'enabled lookup must use the iterated section'
-			[ "$3" = "enabled" ] || fail 'enabled lookup must read the enabled option'
-			[ "$4" = "1" ] || fail 'enabled lookup must default to enabled'
-			eval "$1=$desired_enabled"
+			fail 'procd lifecycle must not decide enabled state outside the helper lock'
 		}
 
 		"$service_entrypoint"
@@ -74,37 +61,19 @@ run_service() {
 	cat "$FAKE_HELPER_LOG"
 }
 
-enabled_start_log="$(run_service 1 start_service)"
-[ "$enabled_start_log" = "reconcile-hook
-apply" ] || fail "enabled OpenClash bypass must reconcile the hook and runtime rules"
+enabled_start_log="$(run_service start_service)"
+[ "$enabled_start_log" = "sync" ] || fail "start must reconcile under one helper lock"
 
-enabled_reload_log="$(run_service 1 reload_service)"
-[ "$enabled_reload_log" = "reconcile-hook
-apply" ] || fail "reload must reconcile the enabled OpenClash bypass"
+enabled_reload_log="$(run_service reload_service)"
+[ "$enabled_reload_log" = "sync" ] || fail "reload must reconcile under one helper lock"
 
-disabled_start_log="$(run_service 0 start_service)"
-[ "$disabled_start_log" = "cleanup" ] || fail "disabled OpenClash bypass must remove only owned state"
+stop_log="$(run_service stop_service)"
+[ "$stop_log" = "cleanup" ] || fail "stop must remove only owned state"
 
-disabled_reload_log="$(run_service 0 reload_service)"
-[ "$disabled_reload_log" = "cleanup" ] || fail "reload must remove disabled OpenClash bypass state"
-
-bad_package_script="$TMP_DIR/init-wrong-package"
-sed 's/config_load tailscale_openclash/config_load tailscale/' "$INIT_SCRIPT" >"$bad_package_script"
-if run_service 1 start_service "$bad_package_script" >/dev/null 2>&1; then
-	fail 'lifecycle test must reject an incorrect UCI package name'
-fi
-
-bad_callback_script="$TMP_DIR/init-wrong-callback"
-sed 's/config_foreach sync_instance openclash/config_foreach wrong_callback openclash/' "$INIT_SCRIPT" >"$bad_callback_script"
-if run_service 1 start_service "$bad_callback_script" >/dev/null 2>&1; then
-	fail 'lifecycle test must reject an incorrect config_foreach callback'
-fi
-
-bad_section_type_script="$TMP_DIR/init-wrong-section-type"
-sed 's/config_foreach sync_instance openclash/config_foreach sync_instance tailscale/' "$INIT_SCRIPT" >"$bad_section_type_script"
-if run_service 1 start_service "$bad_section_type_script" >/dev/null 2>&1; then
-	fail 'lifecycle test must reject an incorrect config_foreach section type'
-fi
+[ "$(grep -Fc '"$PROG" sync' "$INIT_SCRIPT")" -eq 1 ] || \
+	fail 'procd lifecycle must contain exactly one helper sync invocation'
+grep -E 'config_(load|foreach|get_bool)' "$INIT_SCRIPT" >/dev/null && \
+	fail 'OpenClash lifecycle must not read UCI outside the helper lock'
 
 grep -F 'procd_add_reload_trigger "tailscale_openclash"' "$INIT_SCRIPT" >/dev/null || \
 	fail 'OpenClash lifecycle needs its own UCI reload trigger'

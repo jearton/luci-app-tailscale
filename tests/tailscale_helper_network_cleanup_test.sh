@@ -445,6 +445,37 @@ run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts" 0
 [ ! -s "$TMP_DIR/uci_changes.log" ] || fail "reapplying restored SNAT state must not create UCI changes"
 [ ! -s "$TMP_DIR/firewall.log" ] || fail "reapplying restored SNAT state must not reload firewall4"
 
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "" 1
+empty_access_db="$(cat "$TMP_DIR/uci_db")"
+assert_contains "firewall.tszone=zone" "$empty_access_db" \
+	"site-to-site no-SNAT must keep the Tailscale zone when ACCESS is empty"
+assert_contains "firewall.tszone.masq=0" "$empty_access_db" \
+	"site-to-site no-SNAT must disable masquerade when ACCESS is empty"
+for forwarding in ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts; do
+	assert_not_contains "firewall.$forwarding=" "$empty_access_db" \
+		"empty ACCESS must not create forwarding section $forwarding"
+done
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "" 1
+[ ! -s "$TMP_DIR/uci_changes.log" ] || fail "empty-access no-SNAT state must be idempotent"
+[ ! -s "$TMP_DIR/firewall.log" ] || fail "empty-access no-SNAT state must not reload firewall4 when unchanged"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "" 0
+empty_access_disabled_db="$(cat "$TMP_DIR/uci_db")"
+assert_not_contains "firewall.tszone=" "$empty_access_disabled_db" \
+	"disabling no-SNAT with empty ACCESS must remove the Tailscale zone"
+for forwarding in ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts; do
+	assert_not_contains "firewall.$forwarding=" "$empty_access_disabled_db" \
+		"disabling no-SNAT with empty ACCESS must not retain forwarding section $forwarding"
+done
+
+run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts"
 printf '%s\n' 'firewall.tszone.enabled=0' >>"$TMP_DIR/uci_db"
 : >"$TMP_DIR/uci_changes.log"
 : >"$TMP_DIR/firewall.log"

@@ -9,19 +9,11 @@ service_triggers() {
 }
 
 sync_instance() {
-	local cfg="$1" enabled
-	config_get_bool enabled "$cfg" enabled 1
-	if [ "$enabled" = 1 ]; then
-		"$PROG" reconcile-hook || return 1
-		"$PROG" apply || return 1
-	else
-		"$PROG" cleanup || return 1
-	fi
+	"$PROG" sync
 }
 
 start_service() {
-	config_load tailscale_openclash
-	config_foreach sync_instance openclash
+	sync_instance
 }
 
 reload_service() {

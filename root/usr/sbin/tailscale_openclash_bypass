@@ -11,6 +11,18 @@ LOGGER_CMD="${LOGGER_CMD:-logger}"
 
 BEGIN_MARKER='# BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash'
 END_MARKER='# END luci-app-tailscale 托管：Tailscale 绕过 OpenClash'
+HOOK_TEMP_FILE=
+NFT_TEMP_FILE=
+NFT_CACHE_DIR=
+
+cleanup_tracked_temps() {
+	[ -z "$HOOK_TEMP_FILE" ] || rm -f "$HOOK_TEMP_FILE"
+	[ -z "$NFT_TEMP_FILE" ] || rm -f "$NFT_TEMP_FILE"
+	[ -z "$NFT_CACHE_DIR" ] || rm -rf "$NFT_CACHE_DIR"
+}
+
+trap cleanup_tracked_temps EXIT
+trap 'exit 1' HUP INT TERM
 
 managed_block() {
 	cat <<'EOF'
@@ -25,27 +37,42 @@ EOF
 openclash_installed() { test -x "$OPENCLASH_INIT"; }
 log_error() { "$LOGGER_CMD" -p daemon.err -t tailscale_openclash_bypass "$*"; }
 
-marker_state() {
+marker_offsets() {
 	file="$1"
 	[ ! -e "$file" ] && { printf 'absent\n'; return 0; }
-	begin_count="$(grep -cF -- "$BEGIN_MARKER" "$file" 2>/dev/null)"
-	begin_status=$?
-	case "$begin_status" in
-		0|1) ;;
-		*) return 1 ;;
-	esac
-	end_count="$(grep -cF -- "$END_MARKER" "$file" 2>/dev/null)"
-	end_status=$?
-	case "$end_status" in
-		0|1) ;;
-		*) return 1 ;;
-	esac
-	[ "$begin_count" = 0 ] && [ "$end_count" = 0 ] && { printf 'absent\n'; return 0; }
-	[ "$begin_count" = 1 ] && [ "$end_count" = 1 ] || return 1
-	begin_line="$(grep -nF -- "$BEGIN_MARKER" "$file" | cut -d: -f1)" || return 1
-	end_line="$(grep -nF -- "$END_MARKER" "$file" | cut -d: -f1)" || return 1
-	[ "$begin_line" -lt "$end_line" ] || return 1
-	printf 'present\n'
+	[ -f "$file" ] || return 1
+	LC_ALL=C awk -v begin_marker="$BEGIN_MARKER" -v end_marker="$END_MARKER" '
+		BEGIN {
+			offset = 0
+			begin_count = 0
+			end_count = 0
+		}
+		{
+			if ($0 == begin_marker) {
+				begin_count++
+				begin_offset = offset
+			}
+			if ($0 == end_marker) {
+				end_count++
+				end_offset = offset
+			}
+			offset += length($0) + 1
+		}
+		END {
+			if (begin_count == 0 && end_count == 0) {
+				print "absent"
+				exit 0
+			}
+			if (begin_count != 1 || end_count != 1 || begin_offset >= end_offset)
+				exit 1
+			printf "present|%d|%d\n", begin_offset, end_offset
+		}
+	' "$file"
+}
+
+marker_state() {
+	offsets="$(marker_offsets "$1")" || return 1
+	printf '%s\n' "${offsets%%|*}"
 }
 
 file_mode() {
@@ -73,94 +100,105 @@ shebang_size() {
 	printf '%s\n' "$size"
 }
 
-new_temp_file() {
+new_hook_temp_file() {
 	directory="$(dirname "$OPENCLASH_HOOK_FILE")"
-	mktemp "$directory/.tailscale-openclash-hook.XXXXXX"
+	HOOK_TEMP_FILE="$(mktemp "$directory/.tailscale-openclash-hook.XXXXXX")" || return 1
+}
+
+discard_hook_temp() {
+	[ -z "$HOOK_TEMP_FILE" ] || rm -f "$HOOK_TEMP_FILE"
+	HOOK_TEMP_FILE=
 }
 
 finish_replacement() {
-	temp_file="$1"
-	mode="$2"
-	owner="$3"
+	mode="$1"
+	owner="$2"
 
-	if ! sh -n "$temp_file"; then
-		rm -f "$temp_file"
+	if ! sh -n "$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
-	if ! chmod "$mode" "$temp_file"; then
-		rm -f "$temp_file"
+	if [ -n "$owner" ] && ! chown "$owner" "$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
-	if ! chown "$owner" "$temp_file"; then
-		rm -f "$temp_file"
+	if ! chmod "$mode" "$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
-	if ! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
-		rm -f "$temp_file"
+	if ! mv -f "$HOOK_TEMP_FILE" "$OPENCLASH_HOOK_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
+	HOOK_TEMP_FILE=
 }
 
 reconcile_hook() {
 	if [ ! -e "$OPENCLASH_HOOK_FILE" ]; then
 		mkdir -p "$(dirname "$OPENCLASH_HOOK_FILE")" || return 1
-		temp_file="$(new_temp_file)" || return 1
-		if ! printf '#!/bin/sh\n' >"$temp_file"; then
-			rm -f "$temp_file"
+		new_hook_temp_file || return 1
+		if ! printf '#!/bin/sh\n' >"$HOOK_TEMP_FILE"; then
+			discard_hook_temp
 			return 1
 		fi
-		if ! managed_block >>"$temp_file"; then
-			rm -f "$temp_file"
+		if ! managed_block >>"$HOOK_TEMP_FILE"; then
+			discard_hook_temp
 			return 1
 		fi
-		if ! sh -n "$temp_file"; then
-			rm -f "$temp_file"
-			return 1
-		fi
-		if ! chmod 0755 "$temp_file"; then
-			rm -f "$temp_file"
-			return 1
-		fi
-		if ! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
-			rm -f "$temp_file"
-			return 1
-		fi
-		return 0
+		finish_replacement 0755 ''
+		return $?
 	fi
 
-	state="$(marker_state "$OPENCLASH_HOOK_FILE")" || return 1
-	[ "$state" = present ] && return 0
+	offsets="$(marker_offsets "$OPENCLASH_HOOK_FILE")" || return 1
+	state="${offsets%%|*}"
+	case "$state" in
+		absent)
+			prefix_offset="$(shebang_size "$OPENCLASH_HOOK_FILE")" || return 1
+			suffix_offset="$prefix_offset"
+			;;
+		present)
+			rest="${offsets#*|}"
+			prefix_offset="${rest%%|*}"
+			end_offset="${rest#*|}"
+			end_length="$(printf '%s' "$END_MARKER" | wc -c | tr -d '[:space:]')"
+			suffix_offset=$((end_offset + end_length))
+			[ "$(byte_at "$OPENCLASH_HOOK_FILE" "$suffix_offset")" = 0a ] && \
+				suffix_offset=$((suffix_offset + 1))
+			;;
+		*) return 1 ;;
+	esac
 
-	insertion_offset="$(shebang_size "$OPENCLASH_HOOK_FILE")" || return 1
 	mode="$(file_mode "$OPENCLASH_HOOK_FILE")" || return 1
 	owner="$(file_owner "$OPENCLASH_HOOK_FILE")" || return 1
-	temp_file="$(new_temp_file)" || return 1
+	new_hook_temp_file || return 1
 
-	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$insertion_offset" 2>/dev/null >"$temp_file"; then
-		rm -f "$temp_file"
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$prefix_offset" 2>/dev/null >"$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
-	if ! managed_block >>"$temp_file"; then
-		rm -f "$temp_file"
+	if ! managed_block >>"$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
-	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$insertion_offset" 2>/dev/null >>"$temp_file"; then
-		rm -f "$temp_file"
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$suffix_offset" 2>/dev/null >>"$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
 
-	finish_replacement "$temp_file" "$mode" "$owner"
+	finish_replacement "$mode" "$owner"
 }
 
 cleanup_hook() {
 	openclash_installed || return 0
 	[ -e "$OPENCLASH_HOOK_FILE" ] || return 0
 
-	state="$(marker_state "$OPENCLASH_HOOK_FILE")" || return 1
+	offsets="$(marker_offsets "$OPENCLASH_HOOK_FILE")" || return 1
+	state="${offsets%%|*}"
 	[ "$state" = absent ] && return 0
 
-	begin_offset="$(grep -bF -- "$BEGIN_MARKER" "$OPENCLASH_HOOK_FILE" | cut -d: -f1)" || return 1
-	end_offset="$(grep -bF -- "$END_MARKER" "$OPENCLASH_HOOK_FILE" | cut -d: -f1)" || return 1
+	rest="${offsets#*|}"
+	begin_offset="${rest%%|*}"
+	end_offset="${rest#*|}"
 	end_length="$(printf '%s' "$END_MARKER" | wc -c | tr -d '[:space:]')"
 	suffix_offset=$((end_offset + end_length))
 	[ "$(byte_at "$OPENCLASH_HOOK_FILE" "$suffix_offset")" = 0a ] && \
@@ -168,18 +206,18 @@ cleanup_hook() {
 
 	mode="$(file_mode "$OPENCLASH_HOOK_FILE")" || return 1
 	owner="$(file_owner "$OPENCLASH_HOOK_FILE")" || return 1
-	temp_file="$(new_temp_file)" || return 1
+	new_hook_temp_file || return 1
 
-	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$begin_offset" 2>/dev/null >"$temp_file"; then
-		rm -f "$temp_file"
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$begin_offset" 2>/dev/null >"$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
-	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$suffix_offset" 2>/dev/null >>"$temp_file"; then
-		rm -f "$temp_file"
+	if ! dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$suffix_offset" 2>/dev/null >>"$HOOK_TEMP_FILE"; then
+		discard_hook_temp
 		return 1
 	fi
 
-	finish_replacement "$temp_file" "$mode" "$owner"
+	finish_replacement "$mode" "$owner"
 }
 
 rule_specs() {
@@ -191,9 +229,18 @@ openclash|luci-app-tailscale: tailscale0 入站流量绕过 OpenClash（filter�
 EOF
 }
 
-feature_enabled() {
-	enabled="$("$UCI_BIN" -q get tailscale_openclash.settings.enabled 2>/dev/null || true)"
-	[ "$enabled" != 0 ]
+feature_state() {
+	if configured="$("$UCI_BIN" -q get tailscale_openclash.settings.enabled 2>/dev/null)"; then
+		normalized="$(printf '%s' "$configured" | tr '[:upper:]' '[:lower:]')" || return 1
+	else
+		normalized=1
+	fi
+
+	case "$normalized" in
+		1|true|on|yes|enabled) printf 'enabled\n' ;;
+		0|false|off|no|disabled) printf 'disabled\n' ;;
+		*) printf 'invalid\n' ;;
+	esac
 }
 
 new_nft_temp_file() {
@@ -202,6 +249,16 @@ new_nft_temp_file() {
 
 new_nft_cache_dir() {
 	mktemp -d "${TMPDIR:-/tmp}/tailscale-openclash-nft-cache.XXXXXX"
+}
+
+discard_nft_temp() {
+	[ -z "$NFT_TEMP_FILE" ] || rm -f "$NFT_TEMP_FILE"
+	NFT_TEMP_FILE=
+}
+
+discard_nft_cache() {
+	[ -z "$NFT_CACHE_DIR" ] || rm -rf "$NFT_CACHE_DIR"
+	NFT_CACHE_DIR=
 }
 
 nft_json_supported() {
@@ -225,6 +282,23 @@ all_target_chains_present() {
 	done <<EOF
 $specs
 EOF
+}
+
+refreshed_chain_state() {
+	chain="$1"
+	if ! refreshed_table_json="$("$NFT_BIN" -j list table inet fw4 2>/dev/null)"; then
+		printf 'table-absent\n'
+		return 0
+	fi
+	if ! nft_json_supported "$refreshed_table_json"; then
+		printf 'unsupported\n'
+		return 0
+	fi
+	if table_has_chain "$refreshed_table_json" "$chain"; then
+		printf 'present\n'
+	else
+		printf 'absent\n'
+	fi
 }
 
 owned_handles() {
@@ -302,81 +376,101 @@ apply_rules() {
 	all_target_chains_present "$table_json" || return 0
 
 	cache_dir="$(new_nft_cache_dir)" || return 1
+	NFT_CACHE_DIR="$cache_dir"
 	specs="$(rule_specs)"
 
 	while IFS='|' read -r chain comment match; do
 		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
-			log_error "OpenClash nftables chain $chain could not be read." || true
-			rm -rf "$cache_dir"
-			return 1
+			refreshed_state="$(refreshed_chain_state "$chain")" || refreshed_state=unsupported
+			case "$refreshed_state" in
+				absent|table-absent)
+					discard_nft_cache
+					return 0
+					;;
+				*)
+					log_error "OpenClash nftables chain $chain could not be read." || true
+					discard_nft_cache
+					return 1
+					;;
+			esac
 		fi
 		if ! nft_json_supported "$chain_json"; then
 			log_error "OpenClash nftables JSON is unsupported for chain $chain." || true
-			rm -rf "$cache_dir"
+			discard_nft_cache
 			return 1
 		fi
 		if ! cache_owned_handles "$cache_dir" "$chain" "$comment" "$chain_json"; then
 			log_error "Failed to read owned OpenClash nftables rules from chain $chain." || true
-			rm -rf "$cache_dir"
+			discard_nft_cache
 			return 1
 		fi
 	done <<EOF
 $specs
 EOF
 
-	batch="$(new_nft_temp_file)" || {
-		rm -rf "$cache_dir"
+	NFT_TEMP_FILE="$(new_nft_temp_file)" || {
+		discard_nft_cache
 		return 1
 	}
-	if ! append_cached_deletions "$cache_dir" >"$batch"; then
-		rm -rf "$cache_dir"
-		rm -f "$batch"
+	if ! append_cached_deletions "$cache_dir" >"$NFT_TEMP_FILE"; then
+		discard_nft_cache
+		discard_nft_temp
 		return 1
 	fi
-	rm -rf "$cache_dir"
-	if ! append_managed_rules >>"$batch"; then
-		rm -f "$batch"
+	discard_nft_cache
+	if ! append_managed_rules >>"$NFT_TEMP_FILE"; then
+		discard_nft_temp
 		return 1
 	fi
-	if ! "$NFT_BIN" -f "$batch"; then
+	if ! "$NFT_BIN" -f "$NFT_TEMP_FILE"; then
 		log_error 'OpenClash nftables reconciliation transaction failed.' || true
-		rm -f "$batch"
+		discard_nft_temp
 		return 1
 	fi
-	rm -f "$batch"
+	discard_nft_temp
 }
 
 cleanup_rules() {
 	if ! table_json="$("$NFT_BIN" -j list table inet fw4 2>/dev/null)"; then
-		log_error 'OpenClash nftables table inet fw4 is unavailable.' || true
-		return 1
+		return 0
 	fi
 	if ! nft_json_supported "$table_json"; then
 		log_error 'OpenClash nftables table JSON is unsupported.' || true
 		return 1
 	fi
 	cache_dir="$(new_nft_cache_dir)" || return 1
+	NFT_CACHE_DIR="$cache_dir"
 	specs="$(rule_specs)"
 
 	while IFS='|' read -r chain comment match; do
 		: >"$cache_dir/$chain" || {
-			rm -rf "$cache_dir"
+			discard_nft_cache
 			return 1
 		}
 		table_has_chain "$table_json" "$chain" || continue
 		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
-			log_error "OpenClash nftables chain $chain could not be read." || true
-			rm -rf "$cache_dir"
-			return 1
+			refreshed_state="$(refreshed_chain_state "$chain")" || refreshed_state=unsupported
+			case "$refreshed_state" in
+				absent) continue ;;
+				table-absent)
+					discard_nft_cache
+					return 0
+					;;
+				*)
+					log_error "OpenClash nftables chain $chain could not be read." || true
+					discard_nft_cache
+					return 1
+					;;
+			esac
 		fi
 		if ! nft_json_supported "$chain_json"; then
 			log_error "OpenClash nftables JSON is unsupported for chain $chain." || true
-			rm -rf "$cache_dir"
+			discard_nft_cache
 			return 1
 		fi
 		if ! cache_owned_handles "$cache_dir" "$chain" "$comment" "$chain_json"; then
 			log_error "Failed to read owned OpenClash nftables rules from chain $chain." || true
-			rm -rf "$cache_dir"
+			discard_nft_cache
 			return 1
 		fi
 	done <<EOF
@@ -384,29 +478,29 @@ $specs
 EOF
 
 	if ! cached_handles_present "$cache_dir"; then
-		rm -rf "$cache_dir"
+		discard_nft_cache
 		return 0
 	fi
-	batch="$(new_nft_temp_file)" || {
-		rm -rf "$cache_dir"
+	NFT_TEMP_FILE="$(new_nft_temp_file)" || {
+		discard_nft_cache
 		return 1
 	}
-	if ! append_cached_deletions "$cache_dir" >"$batch"; then
-		rm -rf "$cache_dir"
-		rm -f "$batch"
+	if ! append_cached_deletions "$cache_dir" >"$NFT_TEMP_FILE"; then
+		discard_nft_cache
+		discard_nft_temp
 		return 1
 	fi
-	rm -rf "$cache_dir"
-	if [ ! -s "$batch" ]; then
-		rm -f "$batch"
+	discard_nft_cache
+	if [ ! -s "$NFT_TEMP_FILE" ]; then
+		discard_nft_temp
 		return 0
 	fi
-	if ! "$NFT_BIN" -f "$batch"; then
+	if ! "$NFT_BIN" -f "$NFT_TEMP_FILE"; then
 		log_error 'OpenClash nftables cleanup transaction failed.' || true
-		rm -f "$batch"
+		discard_nft_temp
 		return 1
 	fi
-	rm -f "$batch"
+	discard_nft_temp
 }
 
 cleanup_all() {
@@ -418,6 +512,30 @@ cleanup_all() {
 	cleanup_result=$?
 	[ "$result" -ne 0 ] || result="$cleanup_result"
 	return "$result"
+}
+
+sync_all() {
+	openclash_installed || return 0
+	current_feature_state="$(feature_state)" || return 1
+	case "$current_feature_state" in
+		disabled)
+			cleanup_all
+			return $?
+			;;
+		invalid)
+			log_error 'OpenClash bypass enabled setting is invalid.' || true
+			return 1
+			;;
+		enabled) ;;
+		*) return 1 ;;
+	esac
+
+	if ! sync_table_json="$("$NFT_BIN" -j list table inet fw4 2>/dev/null)"; then
+		return 0
+	fi
+	nft_json_supported "$sync_table_json" || return 0
+	reconcile_hook || return 1
+	apply_rules
 }
 
 print_status_json() {
@@ -445,17 +563,21 @@ print_status() {
 		return
 	fi
 
-	if feature_enabled; then
-		enabled=1
-	else
-		enabled=0
-	fi
+	current_feature_state="$(feature_state)" || current_feature_state=invalid
+	case "$current_feature_state" in
+		enabled) enabled=1 ;;
+		*) enabled=0 ;;
+	esac
 	if ! table_json="$("$NFT_BIN" -j list table inet fw4 2>/dev/null)" || ! nft_json_supported "$table_json"; then
 		print_status_json unsupported "$enabled" 1 0 unknown 0 'firewall4/nftables support is unavailable.'
 		return
 	fi
 
-	if [ "$enabled" = 0 ]; then
+	if [ "$current_feature_state" = invalid ]; then
+		print_status_json error 0 1 1 error 0 'OpenClash bypass enabled setting is invalid.'
+		return
+	fi
+	if [ "$current_feature_state" = disabled ]; then
 		print_status_json disabled 0 1 1 unknown 0 'OpenClash bypass is disabled.'
 		return
 	fi
@@ -480,8 +602,21 @@ print_status() {
 	specs="$(rule_specs)"
 	while IFS='|' read -r chain comment match; do
 		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
-			print_status_json error 1 1 1 "$hook" "$rules_present" "OpenClash nftables chain $chain could not be read."
-			return
+			refreshed_state="$(refreshed_chain_state "$chain")" || refreshed_state=unsupported
+			case "$refreshed_state" in
+				absent)
+					print_status_json waiting 1 1 1 "$hook" "$rules_present" 'Waiting for OpenClash nftables chains.'
+					return
+					;;
+				table-absent|unsupported)
+					print_status_json unsupported 1 1 0 "$hook" "$rules_present" 'firewall4/nftables support is unavailable.'
+					return
+					;;
+				*)
+					print_status_json error 1 1 1 "$hook" "$rules_present" "OpenClash nftables chain $chain could not be read."
+					return
+					;;
+			esac
 		fi
 		if ! nft_json_supported "$chain_json"; then
 			print_status_json unsupported 1 1 0 "$hook" "$rules_present" 'firewall4/nftables support is unavailable.'
@@ -522,18 +657,25 @@ case "${1:-}" in
 	status)
 		print_status
 		;;
-	reconcile-hook|apply|cleanup)
+	sync|reconcile-hook|apply|cleanup)
 		exec 9>"$LOCK_FILE" || exit 1
 		flock -x 9 || exit 1
 		case "$1" in
+			sync)
+				sync_all
+				;;
 			reconcile-hook)
 				openclash_installed || exit 0
 				reconcile_hook
 				;;
 			apply)
 				openclash_installed || exit 0
-				feature_enabled || { cleanup_rules; exit $?; }
-				apply_rules
+				current_feature_state="$(feature_state)" || current_feature_state=invalid
+				case "$current_feature_state" in
+					enabled) apply_rules ;;
+					disabled) cleanup_rules ;;
+					*) log_error 'OpenClash bypass enabled setting is invalid.' || true; exit 1 ;;
+				esac
 				;;
 			cleanup)
 				cleanup_all
@@ -541,7 +683,7 @@ case "${1:-}" in
 		esac
 		;;
 	*)
-		printf 'usage: %s {reconcile-hook|apply|cleanup|status}\n' "$0" >&2
+		printf 'usage: %s {sync|reconcile-hook|apply|cleanup|status}\n' "$0" >&2
 		exit 2
 		;;
 esac

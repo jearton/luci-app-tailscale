@@ -10,15 +10,6 @@ LUCI_PKGARCH:=all
 
 PKG_VERSION:=1.2.7
 
-define Package/luci-app-tailscale/postinst
-#!/bin/sh
-if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-openclash-bypass ]; then
-	/etc/init.d/tailscale-openclash-bypass enable >/dev/null 2>&1 || exit 1
-	/etc/init.d/tailscale-openclash-bypass start >/dev/null 2>&1 || exit 1
-fi
-exit 0
-endef
-
 define Package/luci-app-tailscale/prerm
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then

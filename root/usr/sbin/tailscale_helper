@@ -230,11 +230,13 @@ forwarding_rule_matches() {
 
 tailscale_access_rules_match() {
 	local masq="$1"
-	local output section token src dest
+	local output section token src dest zone_required=0
 
 	output="$(uci -q show firewall 2>/dev/null)" || return 1
+	[ -n "$ACCESS" ] && zone_required=1
+	[ "$DISABLE_SNAT_SUBNET_ROUTES" = "1" ] && zone_required=1
 
-	if [ -z "$ACCESS" ]; then
+	if [ "$zone_required" = 0 ]; then
 		for section in tszone ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts; do
 			printf '%s\n' "$output" | grep -q "^firewall\\.$section=" && return 1
 		done
@@ -264,7 +266,7 @@ configure_tailscale_access_rules() {
 	tailscale_access_rules_match "$masq" && return 0
 
 	delete_named_firewall_sections tszone ts_ac_lan ts_ac_wan lan_ac_ts wan_ac_ts || return 1
-	[ -n "$ACCESS" ] || return 0
+	[ -n "$ACCESS" ] || [ "$DISABLE_SNAT_SUBNET_ROUTES" = "1" ] || return 0
 
 	uci set firewall.tszone='zone' || return 1
 	uci set firewall.tszone.input='ACCEPT' || return 1
@@ -391,6 +393,7 @@ cleanup_managed_firewall() {
 	configure_wan_direct_rule || return 1
 
 	ACCESS=
+	DISABLE_SNAT_SUBNET_ROUTES=0
 	configure_tailscale_access_rules || return 1
 
 	apply_firewall_changes

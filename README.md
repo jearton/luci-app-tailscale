@@ -72,6 +72,9 @@ apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-tw-*.apk
 - Manages exactly four comment-owned rules in OpenClash's nftables chains.
 - Does not modify `/etc/config/firewall`, reload firewall4, or start/restart OpenClash.
 - WAN direct remains a separate feature that manages only its own firewall UCI rules.
+- Status states: `active`, `waiting`, `disabled`, `absent`, `unsupported`, and `error`.
+- Cleanup removes only the managed hook block and the four `luci-app-tailscale:` rules.
+- Package installation uses the standard LuCI/OpenWrt post-install lifecycle; the packaged init script performs one locked `sync`.
 
 Rollback:
 

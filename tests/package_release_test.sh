@@ -672,15 +672,19 @@ assert_contains "TAILSCALE_INTERNAL_RELOAD" root/etc/init.d/tailscale
 assert_not_contains "RELOAD_MARKER_FILE" root/etc/init.d/tailscale
 assert_contains 'activate "$secrets_ref"' root/etc/init.d/tailscale
 assert_contains "Package/luci-app-tailscale/prerm" Makefile
-assert_contains "Package/luci-app-tailscale/postinst" Makefile
-assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-openclash-bypass ]; then' Makefile
-assert_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
-assert_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
+assert_not_contains "Package/luci-app-tailscale/postinst" Makefile
+assert_not_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
+assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
 assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
 assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
 assert_before "/usr/sbin/tailscale_openclash_bypass cleanup" "/etc/init.d/tailscale stop" Makefile
 assert_contains "/etc/init.d/tailscale stop" Makefile
 assert_not_contains "/etc/init.d/tailscale stop >/dev/null 2>&1 || true" Makefile
+assert_not_contains "grep -b" root/usr/sbin/tailscale_openclash_bypass
+assert_contains '"$PROG" sync' root/etc/init.d/tailscale-openclash-bypass
+assert_not_contains "config_get_bool" root/etc/init.d/tailscale-openclash-bypass
+assert_contains 'Status states: `active`, `waiting`, `disabled`, `absent`, `unsupported`, and `error`.' README.md
+assert_contains 'Cleanup removes only the managed hook block and the four `luci-app-tailscale:` rules.' README.md
 
 assert_not_exists root/lib/netifd/proto/tailscale.sh
 assert_not_exists htdocs/luci-static/resources/protocol/tailscale.js

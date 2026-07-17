@@ -8,6 +8,33 @@
 
 **Tech Stack:** OpenWrt 24.10 firewall4, nftables JSON output, POSIX `ash`, `flock`, `jq`, UCI/procd, LuCI JavaScript, shell and Node.js behavior tests.
 
+## Approved Final-Review Corrections
+
+The user approved these corrections on 2026-07-17 after read-only verification
+against the office OpenWrt 24.10.5 target. They supersede conflicting details in
+Tasks 1-6 below:
+
+- BusyBox 1.36 `grep` on the target has no `-b`; hook parsing must use exact
+  whole marker lines and BusyBox-compatible `awk`/POSIX tools while preserving
+  all bytes outside the managed block.
+- The canonical managed body must be validated and repaired. A user line that
+  merely contains marker text is not a managed marker.
+- The procd lifecycle invokes one helper `sync` operation. `sync` re-reads UCI
+  and reconciles hook plus runtime rules under one lock; it does not call
+  `reconcile-hook` and `apply` as separate transactions.
+- Unsupported or absent OpenClash/firewall4 states are side-effect-free. Missing
+  OpenClash chains may install the canonical hook and report `waiting`, allowing
+  the next official OpenClash hook execution to apply rules.
+- Remove the custom package `postinst`. Standard LuCI/OpenWrt package lifecycle
+  must retain LuCI cache invalidation, `rpcd` reload, and normal init handling.
+- Normalize UCI booleans with OpenWrt semantics.
+- Site-to-site no-SNAT creates/maintains `firewall.tszone.masq='0'` even when no
+  forwarding access tokens are selected; forwarding sections still depend only
+  on the access list.
+- Cleanup treats an absent fw4 table/chains as success, refreshes state after
+  chain-read races, restores owner before mode, and removes tracked temporary
+  files on signals.
+
 ## Global Constraints
 
 - Preserve every pre-existing working-tree change; do not run `git reset`, `git checkout`, `git restore`, or overwrite files modified by another session.
@@ -347,7 +374,18 @@ marker_state() {
 }
 ```
 
-`reconcile_hook()` must preserve bytes outside the managed block. Locate marker byte offsets with `grep -bF`, use `dd bs=1` to copy the untouched prefix and suffix, and insert the managed block immediately after the shebang line. Treat any separator newline introduced for the block as part of the managed byte range so `cleanup_hook()` restores the original file hash even when the original last line has no newline. Build a temp file in the hook's directory, run `sh -n`, restore the original mode and numeric owner/group on the temp file, and atomically `mv` it over the hook. When the file is absent, create a minimal `#!/bin/sh` script with mode `0755`. Any malformed marker state must return nonzero before a write, and every failure before `mv` must delete only the temp file.
+`reconcile_hook()` must preserve bytes outside the managed block. Locate exact
+whole-line markers with BusyBox-compatible tools; do not use `grep -b`. The
+parser must distinguish marker-like user text, reject duplicate/malformed marker
+pairs, and replace a noncanonical managed body. Use byte-preserving prefix/suffix
+copies and insert the managed block immediately after the shebang line. Treat any
+separator newline introduced for the block as part of the managed byte range so
+`cleanup_hook()` restores the original file hash even when the original last line
+has no newline. Build a temp file in the hook's directory, run `sh -n`, restore
+numeric owner/group before mode, and atomically `mv` it over the hook. When the
+file is absent, create a minimal `#!/bin/sh` script with mode `0755`. Any malformed
+marker state must return nonzero before a write, and every failure or signal
+before `mv` must delete only the tracked temp file.
 
 `cleanup_hook()` must use the same parser and atomic replacement path, but omit the managed block. It must return zero when OpenClash, the hook, or the managed block is absent.
 
@@ -544,7 +582,7 @@ git commit -m "feat: reconcile OpenClash bypass rules"
 - Modify: `tests/package_release_test.sh:126-199,500-547`
 
 **Interfaces:**
-- Consumes: helper commands `reconcile-hook`, `apply`, and `cleanup` from Tasks 2-3.
+- Consumes: helper commands `sync`, `apply`, and `cleanup` from Tasks 2-3.
 - Produces: a package-owned UCI toggle whose reload trigger cannot invoke `/etc/init.d/tailscale` or the WAN-direct helper.
 
 - [ ] **Step 1: Write failing lifecycle and static-isolation tests**
@@ -553,8 +591,7 @@ Create `tests/tailscale_openclash_lifecycle_test.sh` that sources the new init s
 
 ```sh
 enabled_log="$(run_sync 1)"
-[ "$enabled_log" = "reconcile-hook
-apply" ] || fail "enabled OpenClash bypass must reconcile the hook and runtime rules"
+[ "$enabled_log" = "sync" ] || fail "enabled OpenClash bypass must reconcile under one helper lock"
 
 disabled_log="$(run_sync 0)"
 [ "$disabled_log" = "cleanup" ] || fail "disabled OpenClash bypass must remove only owned state"
@@ -616,14 +653,7 @@ service_triggers() {
 }
 
 sync_instance() {
-	local cfg="$1" enabled
-	config_get_bool enabled "$cfg" enabled 1
-	if [ "$enabled" = 1 ]; then
-		"$PROG" reconcile-hook || return 1
-		"$PROG" apply || return 1
-	else
-		"$PROG" cleanup || return 1
-	fi
+	"$PROG" sync
 }
 
 start_service() {
@@ -642,20 +672,14 @@ stop_service() {
 
 This script must contain no reference to `/etc/init.d/tailscale`, `/etc/init.d/firewall`, `fw4 reload`, or OpenClash service actions.
 
-- [ ] **Step 4: Add install, upgrade, and removal hooks**
+- [ ] **Step 4: Preserve standard installation and add removal cleanup**
 
-In `Makefile`, retain the existing Tailscale stop behavior and add OpenClash reconciliation before it:
+Do not define `Package/luci-app-tailscale/postinst`; the LuCI default post-install
+script must retain cache cleanup and `rpcd` reload, while OpenWrt
+`default_postinst` handles packaged init scripts. In `Makefile`, retain the
+existing Tailscale stop behavior and add OpenClash cleanup before it:
 
 ```make
-define Package/luci-app-tailscale/postinst
-#!/bin/sh
-if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-openclash-bypass ]; then
-	/etc/init.d/tailscale-openclash-bypass enable >/dev/null 2>&1 || exit 1
-	/etc/init.d/tailscale-openclash-bypass start >/dev/null 2>&1 || exit 1
-fi
-exit 0
-endef
-
 define Package/luci-app-tailscale/prerm
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then
@@ -968,9 +992,101 @@ git add README.md po/templates/tailscale.pot po/zh_Hans/tailscale.po po/zh_Hant/
 git commit -m "docs: document OpenClash bypass management"
 ```
 
+### Task 7: Correct Final-Review Findings Against OpenWrt 24.10
+
+**Files:**
+- Modify: `docs/superpowers/specs/2026-07-16-tailscale-openclash-bypass-design.md`
+- Modify: `docs/superpowers/plans/2026-07-17-tailscale-openclash-bypass.md`
+- Modify: `root/usr/sbin/tailscale_openclash_bypass`
+- Modify: `root/etc/init.d/tailscale-openclash-bypass`
+- Modify: `root/usr/sbin/tailscale_helper`
+- Modify: `Makefile`
+- Modify: `tests/tailscale_openclash_bypass_test.sh`
+- Modify: `tests/tailscale_openclash_lifecycle_test.sh`
+- Modify: `tests/tailscale_helper_network_cleanup_test.sh`
+- Modify: `tests/package_release_test.sh`
+- Modify: `README.md`
+
+**Interfaces:**
+- Preserves: WAN-direct ownership of firewall UCI/firewall4 reloads only.
+- Preserves: OpenClash ownership of one official custom-hook block and four
+  comment-owned runtime nftables rules only.
+- Produces: one-lock `sync`, BusyBox-compatible hook handling, standard LuCI
+  installation lifecycle, and empty-access no-SNAT correctness.
+
+- [x] **Step 1: Add focused failing regression tests**
+
+Add tests proving:
+
+1. no production path invokes `grep -b`, and the hook works with a fake grep that
+   rejects `-b`;
+2. marker-like user text is preserved, exact duplicate/malformed markers fail,
+   and a stale managed body is replaced canonically;
+3. `sync` performs one locked decision after re-reading UCI, including concurrent
+   enable/disable coverage;
+4. missing OpenClash or unsupported fw4 produces no hook/rule side effect, while
+   present fw4 with missing OpenClash chains produces `waiting` with a canonical
+   hook;
+5. cleanup succeeds when the fw4 table or target chains are already absent, and
+   a disappearing chain is reclassified from refreshed table state;
+6. false aliases `0`, `false`, `off`, `no`, and `disabled` disable the feature;
+7. site-to-site no-SNAT with an empty access list keeps `tszone.masq=0` and creates
+   no forwarding sections; disabling no-SNAT with empty access removes the zone;
+8. standard LuCI post-install behavior is not replaced by a custom package
+   `postinst`;
+9. replacement restores owner before mode and tracked temporary files are removed
+   after termination;
+10. fake nftables rejects nonexistent handles and the locking test uses real
+    `flock` behavior.
+
+Run each focused test before implementation and retain the expected failure
+output in the task report.
+
+- [x] **Step 2: Implement the smallest complete corrections**
+
+Implement `sync` under one exclusive lock. It re-reads UCI itself and dispatches
+the full enabled/disabled state. Keep `apply` for the OpenClash-owned hook, but do
+not split procd reconciliation into two helper invocations. Use exact whole-line,
+canonical hook parsing without `grep -b`; clean only package-owned state; never
+touch firewall UCI or manage OpenClash/firewall4 services.
+
+Remove the custom package post-install block. Keep best-effort package removal
+cleanup. Decouple `tszone` existence from forwarding-token existence when
+site-to-site no-SNAT is enabled.
+
+- [x] **Step 3: Strengthen lifecycle, race, and documentation coverage**
+
+Document all status states and ownership cleanup. Make the fake nftables harness
+fail on stale/nonexistent handles and add a deterministic generation-race case.
+Verify unsupported, waiting, disabled, active, and cleanup behavior through the
+public command interface.
+
+- [x] **Step 4: Run focused and full verification**
+
+Run:
+
+```sh
+set -eu
+sh tests/tailscale_openclash_bypass_test.sh
+sh tests/tailscale_openclash_lifecycle_test.sh
+sh tests/tailscale_helper_network_cleanup_test.sh
+sh tests/package_release_test.sh
+for test in tests/*_test.sh; do sh "$test"; done
+for test in tests/*_test.js; do node "$test"; done
+```
+
+Then run every syntax, JSON, translation, strict-isolation, and diff check from
+Task 6. No router is modified in Task 7.
+
+- [x] **Step 5: Commit Task 7 as one review-fix commit**
+
+Stage only Task 7 paths and preserve the pre-existing modified SDD reports.
+Record the final commit range and request a fresh whole-branch review against
+merge base `7f100d587f473eb73d8736ef9731d644c75b6b2d`.
+
 ## Local Completion Gate
 
-After Task 6, stop. Report:
+After Task 7, stop. Report:
 
 - the exact local commits created;
 - the complete test and syntax results;
