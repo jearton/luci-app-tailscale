@@ -11,6 +11,14 @@ All six final-review corrections were implemented as one fix wave:
 5. Bumped `PKG_VERSION` to `1.2.8`.
 6. Made status require the canonical managed hook body and exact structured nftables rule expressions while allowing dynamic counter values.
 
+A second independent whole-branch review found five additional reconciliation issues, which were fixed before deployment:
+
+1. Chain reads now require structurally valid nftables JSON with exactly one matching chain object and correctly scoped rules with numeric handles.
+2. The command used by the official OpenClash hook now performs full cleanup when the feature is disabled, including removal of the managed hook.
+3. A failed or interrupted independent generation-guard deletion remains tracked so the EXIT trap can retry it.
+4. Status validates UCI and disabled managed artifacts before treating an absent `inet fw4` table as unsupported.
+5. If any target OpenClash chain is absent, reconciliation removes any surviving package-owned partial rule set and waits without installing a subset.
+
 ## Strict TDD evidence
 
 Temporary test paths in two failure messages are normalized as `<tmp>`; all other output is verbatim.
@@ -57,6 +65,24 @@ Temporary test paths in two failure messages are normalized as `<tmp>`; all othe
 - GREEN command: `sh -n root/usr/sbin/tailscale_openclash_bypass && sh tests/tailscale_openclash_bypass_test.sh`
 - GREEN result: exit 0, `tailscale OpenClash bypass tests passed`
 
+### Second review: strict chain JSON validation
+
+- RED command: `sh tests/tailscale_openclash_bypass_test.sh`
+- RED result: exit 1, `FAIL: apply accepted structurally invalid chain JSON mode empty`
+- GREEN command: `sh tests/tailscale_openclash_bypass_test.sh`
+- GREEN result: exit 0, `tailscale OpenClash bypass tests passed`
+- Compatibility evidence: a read-only query against the office OpenWrt 24.10.5 / nftables 1.1.1 returned the expected `metainfo`, matching `chain`, and scoped `rule` objects with numeric handles. The fake nft fixture now includes that real top-level structure.
+
+### Second review: retryable hook cleanup and generation guard
+
+- Added regression coverage for the actual official hook path (`apply` while disabled), independent guard-deletion failure, and termination during guard deletion.
+- GREEN result: `tailscale OpenClash bypass tests passed`
+
+### Second review: status ordering and partial-rule cleanup
+
+- Added regression coverage for invalid UCI with no fw4 table, disabled hook residue with no fw4 table, clean disabled state with no fw4 table, and a missing target chain with surviving partial owned rules.
+- GREEN result: `tailscale OpenClash bypass tests passed`
+
 The complete 11-file shell suite and 4-file JavaScript suite also passed after each correction GREEN.
 
 ## Final verification
@@ -84,7 +110,7 @@ done
 printf 'shell test files passed: %s\n' "$count"
 ```
 
-Result: `shell test files passed: 11`.
+Latest result after both review waves: `shell test files passed: 11`.
 
 Complete JavaScript suite:
 
@@ -98,7 +124,7 @@ done
 printf 'JavaScript test files passed: %s\n' "$count"
 ```
 
-Result: `JavaScript test files passed: 4`.
+Latest result after both review waves: `JavaScript test files passed: 4`.
 
 Static gates:
 
@@ -111,7 +137,7 @@ for file in po/templates/*.pot po/*/*.po; do msgfmt --check-format -o /dev/null 
 git diff --check
 ```
 
-Results: 24 shell syntax files, 8 JavaScript syntax files, 2 JSON files, 3 translation files, and `git diff --check` passed.
+Latest results: 23 shell syntax files, 8 JavaScript syntax files, 2 JSON files, 3 translation files, both the whole-branch and working-tree `git diff --check` checks passed.
 
 Ownership-isolation searches returned no matches:
 
@@ -121,7 +147,7 @@ rg -n 'tailscale_openclash_bypass|openclash_custom_firewall_rules' root/usr/sbin
 rg -n '/etc/init.d/openclash (start|stop|restart|reload|enable|disable)' root/usr/sbin/tailscale_openclash_bypass root/etc/init.d/tailscale-openclash-bypass
 ```
 
-No Docker, MkDocs, router, remote-server, GitHub, or network command was used.
+No Docker, MkDocs, router write, service reload/restart, GitHub, or production mutation command was used. One read-only SSH command queried the office OpenWrt's nftables chain JSON for compatibility evidence; `hzsls-openwrt` was not accessed.
 
 ## Files changed
 
@@ -140,8 +166,11 @@ The pre-existing modifications to task-1 through task-4 reports were preserved b
 - Confirmed guard cleanup paths cover success, batch failure, signal exit, no-op cleanup, and table replacement.
 - Confirmed status rejects noncanonical hooks, altered/overbroad/incomplete/wrong-chain rules, duplicate rules, and unexpected package-owned rules while accepting changing counter values.
 - Confirmed cleanup failure leaves the hook retryable and disabled status reports both hook and rule residue.
+- Confirmed structurally invalid chain JSON cannot trigger apply or cleanup mutation.
+- Confirmed a missing target chain removes surviving partial owned rules and never installs an incomplete set.
+- Confirmed OpenWrt 24.10.5 / nftables 1.1.1 real chain JSON satisfies the strict validator.
 - Confirmed only the five files listed above belong to this fix wave.
 
 ## Remaining concerns
 
-None.
+Office deployment and device-level behavior verification remain intentionally pending a separate, exact backup/change/verification/rollback plan and a fresh explicit `ok`.

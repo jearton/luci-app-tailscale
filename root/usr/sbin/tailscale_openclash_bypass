@@ -328,9 +328,13 @@ create_generation_guard() {
 
 discard_nft_guard() {
 	guard_name="$NFT_GUARD_NAME"
-	NFT_GUARD_NAME=
-	[ -z "$guard_name" ] || \
-		"$NFT_BIN" delete counter inet fw4 "$guard_name" >/dev/null 2>&1 || true
+	[ -n "$guard_name" ] || return 0
+	if "$NFT_BIN" delete counter inet fw4 "$guard_name" >/dev/null 2>&1; then
+		[ "$NFT_GUARD_NAME" != "$guard_name" ] || NFT_GUARD_NAME=
+		return 0
+	fi
+	log_error "Failed to remove tracked nftables generation guard $guard_name; EXIT cleanup will retry." || true
+	return 1
 }
 
 append_guard_deletion() {
@@ -340,6 +344,33 @@ append_guard_deletion() {
 
 nft_json_supported() {
 	printf '%s\n' "$1" | "$JQ_BIN" -e '.nftables | type == "array"' >/dev/null 2>&1
+}
+
+nft_chain_json_supported() {
+	printf '%s\n' "$1" | "$JQ_BIN" -e --arg chain "$2" '
+		(.nftables | type == "array") and
+		([.nftables[] | .chain? |
+			select(.family == "inet" and .table == "fw4" and .name == $chain)] | length == 1) and
+		all(.nftables[];
+			(type == "object") and
+			if has("metainfo") then
+				(.metainfo | type == "object")
+			elif has("chain") then
+				(.chain | type == "object") and
+				(.chain.family == "inet") and
+				(.chain.table == "fw4") and
+				(.chain.name == $chain)
+			elif has("rule") then
+				(.rule | type == "object") and
+				(.rule.family == "inet") and
+				(.rule.table == "fw4") and
+				(.rule.chain == $chain) and
+				(.rule.handle | type == "number")
+			else
+				false
+			end
+		)
+	' >/dev/null 2>&1
 }
 
 nft_table_inventory_supported() {
@@ -549,7 +580,10 @@ apply_rules() {
 			return 1
 			;;
 	esac
-	all_target_chains_present "$table_json" || return 0
+	if ! all_target_chains_present "$table_json"; then
+		cleanup_rules
+		return $?
+	fi
 
 	cache_dir="$(new_nft_cache_dir)" || return 1
 	NFT_CACHE_DIR="$cache_dir"
@@ -576,7 +610,7 @@ apply_rules() {
 					;;
 			esac
 		fi
-		if ! nft_json_supported "$chain_json"; then
+		if ! nft_chain_json_supported "$chain_json" "$chain"; then
 			log_error "OpenClash nftables JSON is unsupported for chain $chain." || true
 			discard_nft_guard
 			discard_nft_cache
@@ -668,7 +702,7 @@ cleanup_rules() {
 					;;
 			esac
 		fi
-		if ! nft_json_supported "$chain_json"; then
+		if ! nft_chain_json_supported "$chain_json" "$chain"; then
 			log_error "OpenClash nftables JSON is unsupported for chain $chain." || true
 			discard_nft_guard
 			discard_nft_cache
@@ -778,6 +812,7 @@ print_status_json() {
 
 print_disabled_status() {
 	disabled_table_json="$1"
+	disabled_firewall4_supported="${2:-1}"
 	if ! disabled_hook_state="$(canonical_hook_state "$OPENCLASH_HOOK_FILE")"; then
 		disabled_hook=error
 	else
@@ -789,24 +824,39 @@ print_disabled_status() {
 	fi
 
 	disabled_rules_present="$(owned_rule_count "$disabled_table_json")" || {
-		print_status_json error 0 1 1 "$disabled_hook" 0 \
+		print_status_json error 0 1 "$disabled_firewall4_supported" "$disabled_hook" 0 \
 			'OpenClash bypass rule ownership data could not be read.'
 		return
 	}
 	case "$disabled_rules_present" in
 		''|*[!0-9]*)
-			print_status_json error 0 1 1 "$disabled_hook" 0 \
+			print_status_json error 0 1 "$disabled_firewall4_supported" "$disabled_hook" 0 \
 				'OpenClash bypass rule ownership data is invalid.'
 			return
 			;;
 	esac
 
 	if [ "$disabled_hook" = absent ] && [ "$disabled_rules_present" = 0 ]; then
-		print_status_json disabled 0 1 1 absent 0 'OpenClash bypass is disabled.'
+		print_status_json disabled 0 1 "$disabled_firewall4_supported" absent 0 'OpenClash bypass is disabled.'
 		return
 	fi
-	print_status_json error 0 1 1 "$disabled_hook" "$disabled_rules_present" \
+	print_status_json error 0 1 "$disabled_firewall4_supported" "$disabled_hook" "$disabled_rules_present" \
 		'OpenClash bypass is disabled but managed artifacts remain.'
+}
+
+print_disabled_read_error_status() {
+	disabled_firewall4_supported="$1"
+	disabled_message="$2"
+	if ! disabled_hook_state="$(canonical_hook_state "$OPENCLASH_HOOK_FILE")"; then
+		disabled_hook=error
+	else
+		case "$disabled_hook_state" in
+			managed) disabled_hook=managed ;;
+			absent) disabled_hook=absent ;;
+			*) disabled_hook=error ;;
+		esac
+	fi
+	print_status_json error 0 1 "$disabled_firewall4_supported" "$disabled_hook" 0 "$disabled_message"
 }
 
 print_status() {
@@ -820,8 +870,23 @@ print_status() {
 		enabled) enabled=1 ;;
 		*) enabled=0 ;;
 	esac
+	if [ "$current_feature_state" = invalid ]; then
+		print_status_json error 0 1 0 error 0 'OpenClash bypass enabled setting is invalid.'
+		return
+	fi
+
 	table_json="$(read_fw4_table)"
 	table_result=$?
+	if [ "$current_feature_state" = disabled ]; then
+		case "$table_result" in
+			0) print_disabled_status "$table_json" 1 ;;
+			2) print_disabled_status '{"nftables":[]}' 0 ;;
+			1) print_disabled_read_error_status 0 'Unable to read firewall4/nftables state.' ;;
+			*) print_disabled_read_error_status 1 'Unable to read firewall4/nftables state.' ;;
+		esac
+		return
+	fi
+
 	case "$table_result" in
 		0) ;;
 		2)
@@ -838,15 +903,6 @@ print_status() {
 			;;
 	esac
 
-	if [ "$current_feature_state" = invalid ]; then
-		print_status_json error 0 1 1 error 0 'OpenClash bypass enabled setting is invalid.'
-		return
-	fi
-	if [ "$current_feature_state" = disabled ]; then
-		print_disabled_status "$table_json"
-		return
-	fi
-
 	if ! hook_state="$(canonical_hook_state "$OPENCLASH_HOOK_FILE")"; then
 		print_status_json error 1 1 1 error 0 'Managed hook markers are malformed.'
 		return
@@ -861,11 +917,6 @@ print_status() {
 		*) print_status_json error 1 1 1 error 0 'Managed hook markers are malformed.'; return ;;
 	esac
 
-	if ! all_target_chains_present "$table_json"; then
-		print_status_json waiting 1 1 1 "$hook" 0 'Waiting for OpenClash nftables chains.'
-		return
-	fi
-
 	complete_rules=1
 	rules_present="$(owned_rule_count "$table_json")" || {
 		print_status_json error 1 1 1 "$hook" 0 'OpenClash bypass rule ownership data could not be read.'
@@ -877,6 +928,11 @@ print_status() {
 			return
 			;;
 	esac
+	if ! all_target_chains_present "$table_json"; then
+		print_status_json waiting 1 1 1 "$hook" "$rules_present" 'Waiting for OpenClash nftables chains.'
+		return
+	fi
+
 	specs="$(rule_specs)"
 	while IFS='|' read -r chain comment match; do
 		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
@@ -900,7 +956,7 @@ print_status() {
 					;;
 			esac
 		fi
-		if ! nft_json_supported "$chain_json"; then
+		if ! nft_chain_json_supported "$chain_json" "$chain"; then
 			print_status_json error 1 1 1 "$hook" "$rules_present" "OpenClash nftables JSON is invalid for chain $chain."
 			return
 		fi
@@ -944,7 +1000,7 @@ case "${1:-}" in
 				current_feature_state="$(feature_state)" || current_feature_state=invalid
 				case "$current_feature_state" in
 					enabled) apply_rules ;;
-					disabled) cleanup_rules ;;
+					disabled) cleanup_all ;;
 					*) log_error 'OpenClash bypass enabled setting is invalid.' || true; exit 1 ;;
 				esac
 				;;
