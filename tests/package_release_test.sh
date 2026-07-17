@@ -199,6 +199,66 @@ assert_not_contains "uci commit firewall" root/usr/sbin/tailscale_openclash_bypa
 assert_not_contains "/etc/init.d/firewall" root/usr/sbin/tailscale_openclash_bypass
 assert_not_contains "/etc/init.d/openclash reload" root/usr/sbin/tailscale_openclash_bypass
 assert_not_contains "/etc/init.d/openclash restart" root/usr/sbin/tailscale_openclash_bypass
+assert_contains 'msgid "OpenClash"' po/templates/tailscale.pot
+assert_contains 'msgid "Enable OpenClash Bypass"' po/templates/tailscale.pot
+assert_contains 'msgid "Status"' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled and active"' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled; waiting for OpenClash nftables chains"' po/templates/tailscale.pot
+assert_contains 'msgid "Disabled"' po/templates/tailscale.pot
+assert_contains 'msgid "OpenClash is not installed"' po/templates/tailscale.pot
+assert_contains 'msgid "Unsupported: firewall4/nftables is required"' po/templates/tailscale.pot
+assert_contains 'msgid "Configuration error"' po/templates/tailscale.pot
+assert_contains 'msgid "Unknown status"' po/templates/tailscale.pot
+assert_contains 'msgid "Unable to read OpenClash bypass status."' po/templates/tailscale.pot
+assert_contains 'msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."' po/templates/tailscale.pot
+assert_contains 'msgid "OpenClash"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "OpenClash"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Enable OpenClash Bypass"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "启用 OpenClash 绕过"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Status"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "状态"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Enabled and active"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "已启用并生效"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Enabled; waiting for OpenClash nftables chains"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "已启用，等待 OpenClash 创建 nftables 链"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Disabled"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "已禁用"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "OpenClash is not installed"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "未安装 OpenClash"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Unsupported: firewall4/nftables is required"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "不支持：需要 firewall4/nftables"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Configuration error"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "配置错误"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Unknown status"' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "未知状态"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Unable to read OpenClash bypass status."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "无法读取 OpenClash 绕过状态。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "绕过 OpenClash，使带有 Tailscale 标记的本机流量和从 tailscale0 进入的流量不经过代理。此功能不会重载 firewall4，也不会管理 OpenClash 服务。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "OpenClash"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "OpenClash"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Enable OpenClash Bypass"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "啟用 OpenClash 繞過"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Status"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "狀態"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Enabled and active"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "已啟用並生效"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Enabled; waiting for OpenClash nftables chains"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "已啟用，等待 OpenClash 建立 nftables 鏈"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Disabled"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "已停用"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "OpenClash is not installed"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "未安裝 OpenClash"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Unsupported: firewall4/nftables is required"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "不支援：需要 firewall4/nftables"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Configuration error"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "設定錯誤"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Unknown status"' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "未知狀態"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Unable to read OpenClash bypass status."' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "無法讀取 OpenClash 繞過狀態。"' po/zh_Hant/tailscale.po
+assert_contains 'msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."' po/zh_Hant/tailscale.po
+assert_contains 'msgstr "繞過 OpenClash，讓帶有 Tailscale 標記的主機流量及從 tailscale0 進入的流量不經代理。此功能不會重新載入 firewall4，也不會管理 OpenClash 服務。"' po/zh_Hant/tailscale.po
 assert_contains 'msgid "Allow WAN Direct"' po/templates/tailscale.pot
 assert_contains 'msgid "WAN Direct Source Zones"' po/templates/tailscale.pot
 assert_contains 'msgid "Allow WAN Direct"' po/zh_Hans/tailscale.po
