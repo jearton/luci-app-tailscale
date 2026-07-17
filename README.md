@@ -33,17 +33,33 @@ Tailscale is a zero config VPN for building secure networks.
 - Upload the prebuilt ipk or apk package to the /tmp directory of OpenWrt
 - Login OpenWrt terminal (SSH)
 
-### opkg package manager 
-  ```shell
-  opkg update
-  opkg install --force-overwrite /tmp/luci-*-tailscale*.ipk
-  ```
+Install the main package, then optionally install either the Simplified Chinese or Traditional Chinese language package.
 
-### apk package manager 
-  ```shell
-  apk update
-  apk add --allow-untrusted --force-overwrite /tmp/luci-*-tailscale*.apk
-  ```
+### opkg package manager
+
+```shell
+opkg update
+opkg install /tmp/luci-app-tailscale_*.ipk
+
+# Optional Simplified Chinese translation
+opkg install /tmp/luci-i18n-tailscale-zh-cn_*.ipk
+
+# Or optional Traditional Chinese translation
+opkg install /tmp/luci-i18n-tailscale-zh-tw_*.ipk
+```
+
+### apk package manager
+
+```shell
+apk update
+apk add --allow-untrusted /tmp/luci-app-tailscale-*.apk
+
+# Optional Simplified Chinese translation
+apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-cn-*.apk
+
+# Or optional Traditional Chinese translation
+apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-tw-*.apk
+```
 
 --------------
 
