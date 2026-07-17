@@ -264,6 +264,38 @@ run_service_stopped() {
 	cat "$FAKE_ADGUARD_LOG"
 }
 
+capture_tailscale_snat_args() {
+	disable_snat="$1"
+	PROCD_LOG="$TMP_DIR/procd-snat-$disable_snat.log"
+	: >"$PROCD_LOG"
+	export PROCD_LOG
+	(
+		. "$INIT_SCRIPT"
+		PROGS="$TMP_DIR/fake-secrets"
+		config_get() {
+			case "$3" in
+				port) eval "$1=41641" ;;
+				access) eval "$1=ts_ac_lan" ;;
+				*) eval "$1=" ;;
+			esac
+		}
+		config_get_bool() {
+			case "$3" in
+				disable_snat_subnet_routes) eval "$1=$disable_snat" ;;
+				accept_dns) eval "$1=1" ;;
+				*) eval "$1=0" ;;
+			esac
+		}
+		config_list_foreach() { :; }
+		procd_open_instance() { :; }
+		procd_set_param() { printf 'set:%s\n' "$*" >>"$PROCD_LOG"; }
+		procd_append_param() { printf 'append:%s\n' "$*" >>"$PROCD_LOG"; }
+		procd_close_instance() { :; }
+		tailscale_helper settings
+	)
+	cat "$PROCD_LOG"
+}
+
 cat >"$TMP_DIR/fake-tailscaled" <<'SH'
 #!/bin/sh
 [ "${1:-}" = "--cleanup" ] || exit 1
@@ -328,6 +360,18 @@ if run_stop_instance "--cleanup-managed-firewall"; then
 	fail "stop_instance should report a managed firewall cleanup failure"
 fi
 [ -f "$CONFIG_DIR/exit_node_firewall_state" ] || fail "stop_instance must preserve helper recovery state when cleanup fails"
+
+snat_disabled_args="$(capture_tailscale_snat_args 1)"
+printf '%s\n' "$snat_disabled_args" | grep -F -- '--snat-subnet-routes=false' >/dev/null || \
+	fail "site-to-site enable must pass --snat-subnet-routes=false"
+printf '%s\n' "$snat_disabled_args" | grep -F 'DISABLE_SNAT_SUBNET_ROUTES=1' >/dev/null || \
+	fail "site-to-site enable must pass no-SNAT state to the firewall helper"
+
+snat_enabled_args="$(capture_tailscale_snat_args 0)"
+printf '%s\n' "$snat_enabled_args" | grep -F -- '--snat-subnet-routes=true' >/dev/null || \
+	fail "site-to-site disable must pass --snat-subnet-routes=true"
+printf '%s\n' "$snat_enabled_args" | grep -F 'DISABLE_SNAT_SUBNET_ROUTES=0' >/dev/null || \
+	fail "site-to-site disable must pass SNAT state to the firewall helper"
 
 normalized_default="$(
 	. "$INIT_SCRIPT"

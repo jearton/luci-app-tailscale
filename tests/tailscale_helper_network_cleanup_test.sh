@@ -246,9 +246,10 @@ run_helper() {
 	tailscale_port="${3:-41641}"
 	wan_direct_zones="${4:-wan}"
 	access="${5:-}"
+	disable_snat_subnet_routes="${6:-0}"
 	ACCESS="$access"
 	ACCEPT_DNS=0
-	DISABLE_SNAT_SUBNET_ROUTES=0
+	DISABLE_SNAT_SUBNET_ROUTES="$disable_snat_subnet_routes"
 	ALLOW_WAN_DIRECT="$allow_wan_direct"
 	TAILSCALE_PORT="$tailscale_port"
 	WAN_DIRECT_ZONES="$wan_direct_zones"
@@ -415,6 +416,24 @@ run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts"
 actual: $(cat "$TMP_DIR/uci_changes.log")"
 [ ! -s "$TMP_DIR/firewall.log" ] || fail "reapplying unchanged ACCESS firewall rules should not reload firewall
 actual: $(cat "$TMP_DIR/firewall.log")"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts" 1
+assert_contains "firewall.tszone.masq=0" "$(cat "$TMP_DIR/uci_db")" \
+	"site-to-site enable must disable masquerade in the app-owned Tailscale firewall zone"
+assert_contains "reload" "$(cat "$TMP_DIR/firewall.log")" \
+	"changing site-to-site SNAT must reload firewall4 through the existing firewall flow"
+
+: >"$TMP_DIR/uci_changes.log"
+: >"$TMP_DIR/firewall.log"
+run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts" 1
+[ ! -s "$TMP_DIR/uci_changes.log" ] || fail "unchanged no-SNAT firewall state must be idempotent"
+[ ! -s "$TMP_DIR/firewall.log" ] || fail "unchanged no-SNAT firewall state must not reload firewall4"
+
+run_helper "" 0 41641 wan "ts_ac_lan lan_ac_ts" 0
+assert_contains "firewall.tszone.masq=1" "$(cat "$TMP_DIR/uci_db")" \
+	"site-to-site disable must restore masquerade in the app-owned Tailscale firewall zone"
 
 printf '%s\n' 'firewall.tszone.enabled=0' >>"$TMP_DIR/uci_db"
 : >"$TMP_DIR/uci_changes.log"
