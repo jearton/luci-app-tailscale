@@ -53,6 +53,13 @@ const callSetSecrets = rpc.declare({
 	reject: true
 });
 
+const callOpenclashBypassStatus = rpc.declare({
+	object: 'luci.tailscale',
+	method: 'openclash_bypass_status',
+	expect: { '': {} },
+	reject: true
+});
+
 const ADGUARD_PREFLIGHT_CHECKS = [
 	{ key: 'adguard_process', label: _('AdGuard process') },
 	{ key: 'port_53_adguard', label: _('Port 53 is AdGuard') },
@@ -333,6 +340,30 @@ async function refreshAdguardPreflightStatus() {
 	});
 }
 
+function renderOpenclashBypassStatus(status) {
+	const labels = {
+		active: _('Enabled and active'),
+		waiting: _('Enabled; waiting for OpenClash nftables chains'),
+		disabled: _('Disabled'),
+		absent: _('OpenClash is not installed'),
+		unsupported: _('Unsupported: firewall4/nftables is required'),
+		error: _('Configuration error')
+	};
+	return labels[status && status.state] || _('Unknown status');
+}
+
+async function refreshOpenclashBypassStatus() {
+	const node = document.getElementById('openclash_bypass_status');
+	if (!node)
+		return;
+	try {
+		const status = await callOpenclashBypassStatus();
+		node.textContent = renderOpenclashBypassStatus(status);
+	} catch (error) {
+		node.textContent = _('Unable to read OpenClash bypass status.');
+	}
+}
+
 function hasFormListValue(option, section_id) {
 	return toList(option.formvalue(section_id)).map(function(value) {
 		return String(value || '').trim();
@@ -353,7 +384,8 @@ return view.extend({
 				uci.load('tailscale'),
 				uci.load('firewall'),
 				getStatus(),
-				getInterfaceSubnets()
+				getInterfaceSubnets(),
+				uci.load('tailscale_openclash')
 			]).then(function(data) {
 				data.push(secretStatus);
 				return data;
@@ -368,7 +400,7 @@ return view.extend({
 		const firewallZones = getFirewallZones();
 		const onlineExitNodes = statusData.onlineExitNodes;
 		const peers = statusData.peers;
-		const secretStatus = data[4] || {};
+		const secretStatus = data[5] || {};
 		let hasAuthKey = secretStatus.authkey_set === '1';
 		const savedKeepalivePeers = toList(uci.get('tailscale', 'settings', 'keepalive_peers'));
 		let hasAdguardPassword = secretStatus.adguard_password_set === '1';
@@ -763,6 +795,29 @@ return view.extend({
 		o.default = '2';
 		o.rmempty = false;
 
+		s.tab('openclash', _('OpenClash'));
+
+		o = s.taboption('openclash', form.Flag, 'openclash_bypass_enabled', _('Enable OpenClash Bypass'),
+			_('Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service.'));
+		o.default = o.enabled;
+		o.rmempty = false;
+		o.cfgvalue = function() {
+			return uci.get('tailscale_openclash', 'settings', 'enabled') || '1';
+		};
+		o.write = function(section_id, value) {
+			return uci.set('tailscale_openclash', 'settings', 'enabled', value);
+		};
+		o.remove = function() {
+			return uci.set('tailscale_openclash', 'settings', 'enabled', '0');
+		};
+
+		o = s.taboption('openclash', form.DummyValue, '_openclash_bypass_status', _('Status'));
+		o.rawhtml = true;
+		o.cfgvalue = function() { return ''; };
+		o.renderWidget = function() {
+			return E('span', { id: 'openclash_bypass_status' }, _('Checking ...'));
+		};
+
 		s.tab('extra', _('Extra Settings'));
 
 		o = s.taboption('extra', form.DynamicList, 'flags', _('Additional Flags'),
@@ -848,6 +903,7 @@ return view.extend({
 
 		return Promise.resolve(m.render()).then(function(node) {
 			window.setTimeout(refreshAdguardPreflightStatus, 0);
+			window.setTimeout(refreshOpenclashBypassStatus, 0);
 			return node;
 		});
 	}

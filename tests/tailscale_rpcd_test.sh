@@ -58,11 +58,19 @@ printf 'adguard_process=pass\nhealth_check=pass\nready=pass\n'
 SH
 chmod +x "$TMP_DIR/preflight"
 
+cat >"$TMP_DIR/openclash-helper" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >"${OPENCLASH_HELPER_ARGV_LOG:?}"
+printf '%s\n' '{"state":"active","rules_present":4,"detail":"helper status"}'
+SH
+chmod +x "$TMP_DIR/openclash-helper"
+
 PREFLIGHT_ARGV_LOG="$TMP_DIR/argv.log"
 PREFLIGHT_ENV_LOG="$TMP_DIR/env.log"
 SECRETS_ARGV_LOG="$TMP_DIR/secrets-argv.log"
 SECRETS_STDIN_LOG="$TMP_DIR/secrets-stdin.log"
-export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG
+OPENCLASH_HELPER_ARGV_LOG="$TMP_DIR/openclash-helper-argv.log"
+export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG OPENCLASH_HELPER_ARGV_LOG
 : >"$SECRETS_ARGV_LOG"
 : >"$SECRETS_STDIN_LOG"
 
@@ -71,6 +79,15 @@ printf '%s' "$list_json" | jq -e '.adguard_preflight.candidate == "" and .adguar
 	fail "rpcd list output must declare the AdGuard preflight string arguments"
 printf '%s' "$list_json" | jq -e '.secret_status == {} and (has("set_secret") | not) and .set_secrets.authkey_set == "" and .set_secrets.adguard_password_set == "" and .set_secrets.base_ref == ""' >/dev/null || \
 	fail "rpcd list output must declare secret status and write methods"
+printf '%s' "$list_json" | jq -e '.openclash_bypass_status == {}' >/dev/null || \
+	fail "rpcd list output must declare the read-only OpenClash bypass status method"
+
+openclash_status_response="$(printf '%s\n' '{"ignored":"caller-controlled input"}' | OPENCLASH_BYPASS_BIN="$TMP_DIR/openclash-helper" \
+	"$RPCD_SCRIPT" call openclash_bypass_status)"
+printf '%s' "$openclash_status_response" | jq -e '.state == "active" and .rules_present == 4 and .detail == "helper status"' >/dev/null || \
+	fail "rpcd must return the helper status object unchanged"
+[ "$(cat "$OPENCLASH_HELPER_ARGV_LOG")" = "status" ] || \
+	fail "rpcd must invoke the OpenClash helper with the fixed status argument only"
 
 status_response="$(printf '%s\n' '{}' | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call secret_status)"
 printf '%s' "$status_response" | jq -e '.authkey_set == "1" and .adguard_password_set == "1"' >/dev/null || \

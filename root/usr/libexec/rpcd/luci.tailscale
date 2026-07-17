@@ -5,10 +5,11 @@
 
 PRECHECK_BIN="${PRECHECK_BIN:-/usr/sbin/tailscale_adguard_dns_switch}"
 SECRETS_BIN="${SECRETS_BIN:-/usr/sbin/tailscale_secrets}"
+OPENCLASH_BYPASS_BIN="${OPENCLASH_BYPASS_BIN:-/usr/sbin/tailscale_openclash_bypass}"
 JQ_BIN="${JQ_BIN:-jq}"
 
 print_methods() {
-	printf '%s\n' '{"secret_status":{},"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""},"set_secrets":{"authkey_set":"","authkey":"","adguard_password_set":"","adguard_password":"","api_url":"","username":"","base_ref":""}}'
+	printf '%s\n' '{"secret_status":{},"openclash_bypass_status":{},"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""},"set_secrets":{"authkey_set":"","authkey":"","adguard_password_set":"","adguard_password":"","api_url":"","username":"","base_ref":""}}'
 }
 
 fail_json() {
@@ -112,6 +113,10 @@ run_secret_status() {
 		'{authkey_set:$authkey_set,adguard_password_set:$adguard_password_set}'
 }
 
+run_openclash_bypass_status() {
+	"$OPENCLASH_BYPASS_BIN" status
+}
+
 run_set_secrets() {
 	request="$(cat)"
 	printf '%s' "$request" | "$JQ_BIN" -e '
@@ -163,6 +168,9 @@ case "${1:-}" in
 		case "${2:-}" in
 			secret_status)
 				run_secret_status
+				;;
+			openclash_bypass_status)
+				run_openclash_bypass_status
 				;;
 			adguard_preflight)
 				parse_request

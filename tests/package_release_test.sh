@@ -532,8 +532,9 @@ assert_contains 'msgid "Leave blank to keep the existing auth key; enter a new v
 assert_contains 'msgstr "留空则保留现有认证密钥；填写新值则覆盖。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Failed to stage protected credentials."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "暂存受保护凭证失败。"' po/zh_Hans/tailscale.po
-assert_contains '"luci.tailscale": [ "secret_status" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_contains '"luci.tailscale": [ "secret_status", "openclash_bypass_status" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secrets" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_contains '"uci": [ "tailscale", "tailscale_openclash" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains '"set_secret"' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
