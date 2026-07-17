@@ -115,6 +115,7 @@ reconcile_hook() {
 }
 
 cleanup_hook() {
+	openclash_installed || return 0
 	[ -e "$OPENCLASH_HOOK_FILE" ] || return 0
 
 	state="$(marker_state "$OPENCLASH_HOOK_FILE")" || return 1
