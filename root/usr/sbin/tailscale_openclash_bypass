@@ -1,0 +1,151 @@
+#!/bin/sh
+set -u
+
+OPENCLASH_INIT="${OPENCLASH_INIT:-/etc/init.d/openclash}"
+OPENCLASH_HOOK_FILE="${OPENCLASH_HOOK_FILE:-/etc/openclash/custom/openclash_custom_firewall_rules.sh}"
+LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale-openclash-bypass.lock}"
+UCI_BIN="${UCI_BIN:-uci}"
+NFT_BIN="${NFT_BIN:-nft}"
+JQ_BIN="${JQ_BIN:-jq}"
+LOGGER_CMD="${LOGGER_CMD:-logger}"
+
+BEGIN_MARKER='# BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash'
+END_MARKER='# END luci-app-tailscale 托管：Tailscale 绕过 OpenClash'
+
+managed_block() {
+	cat <<'EOF'
+# BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash
+if test -x /usr/sbin/tailscale_openclash_bypass; then
+	/usr/sbin/tailscale_openclash_bypass apply
+fi
+# END luci-app-tailscale 托管：Tailscale 绕过 OpenClash
+EOF
+}
+
+openclash_installed() { test -x "$OPENCLASH_INIT"; }
+log_error() { "$LOGGER_CMD" -p daemon.err -t tailscale_openclash_bypass "$*"; }
+
+marker_state() {
+	file="$1"
+	begin_count="$(grep -cF -- "$BEGIN_MARKER" "$file" 2>/dev/null || true)"
+	end_count="$(grep -cF -- "$END_MARKER" "$file" 2>/dev/null || true)"
+	[ "$begin_count" = 0 ] && [ "$end_count" = 0 ] && { printf 'absent\n'; return 0; }
+	[ "$begin_count" = 1 ] && [ "$end_count" = 1 ] || return 1
+	begin_line="$(grep -nF -- "$BEGIN_MARKER" "$file" | cut -d: -f1)"
+	end_line="$(grep -nF -- "$END_MARKER" "$file" | cut -d: -f1)"
+	[ "$begin_line" -lt "$end_line" ] || return 1
+	printf 'present\n'
+}
+
+file_mode() {
+	stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
+}
+
+file_owner() {
+	stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1"
+}
+
+byte_at() {
+	dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | od -An -tx1 | tr -d '[:space:]'
+}
+
+shebang_size() {
+	first_line="$(head -n 1 "$1")"
+	case "$first_line" in
+		'#!'*) ;;
+		*) return 1 ;;
+	esac
+
+	size="$(head -n 1 "$1" | wc -c | tr -d '[:space:]')"
+	[ "$size" -gt 0 ] || return 1
+	[ "$(byte_at "$1" $((size - 1)))" = 0a ] || return 1
+	printf '%s\n' "$size"
+}
+
+new_temp_file() {
+	directory="$(dirname "$OPENCLASH_HOOK_FILE")"
+	mktemp "$directory/.tailscale-openclash-hook.XXXXXX"
+}
+
+finish_replacement() {
+	temp_file="$1"
+	mode="$2"
+	owner="$3"
+
+	if ! sh -n "$temp_file" || ! chmod "$mode" "$temp_file" || ! chown "$owner" "$temp_file" || \
+		! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+}
+
+reconcile_hook() {
+	if [ ! -e "$OPENCLASH_HOOK_FILE" ]; then
+		mkdir -p "$(dirname "$OPENCLASH_HOOK_FILE")" || return 1
+		temp_file="$(new_temp_file)" || return 1
+		if ! {
+			printf '#!/bin/sh\n'
+			managed_block
+		} >"$temp_file" || ! sh -n "$temp_file" || ! chmod 0755 "$temp_file" || \
+			! mv -f "$temp_file" "$OPENCLASH_HOOK_FILE"; then
+			rm -f "$temp_file"
+			return 1
+		fi
+		return 0
+	fi
+
+	state="$(marker_state "$OPENCLASH_HOOK_FILE")" || return 1
+	[ "$state" = present ] && return 0
+
+	insertion_offset="$(shebang_size "$OPENCLASH_HOOK_FILE")" || return 1
+	mode="$(file_mode "$OPENCLASH_HOOK_FILE")" || return 1
+	owner="$(file_owner "$OPENCLASH_HOOK_FILE")" || return 1
+	temp_file="$(new_temp_file)" || return 1
+
+	if ! {
+		dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$insertion_offset" 2>/dev/null
+		managed_block
+		dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$insertion_offset" 2>/dev/null
+	} >"$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+
+	finish_replacement "$temp_file" "$mode" "$owner"
+}
+
+cleanup_hook() {
+	[ -e "$OPENCLASH_HOOK_FILE" ] || return 0
+
+	state="$(marker_state "$OPENCLASH_HOOK_FILE")" || return 1
+	[ "$state" = absent ] && return 0
+
+	begin_offset="$(grep -bF -- "$BEGIN_MARKER" "$OPENCLASH_HOOK_FILE" | cut -d: -f1)"
+	end_offset="$(grep -bF -- "$END_MARKER" "$OPENCLASH_HOOK_FILE" | cut -d: -f1)"
+	end_length="$(printf '%s' "$END_MARKER" | wc -c | tr -d '[:space:]')"
+	suffix_offset=$((end_offset + end_length))
+	[ "$(byte_at "$OPENCLASH_HOOK_FILE" "$suffix_offset")" = 0a ] && \
+		suffix_offset=$((suffix_offset + 1))
+
+	mode="$(file_mode "$OPENCLASH_HOOK_FILE")" || return 1
+	owner="$(file_owner "$OPENCLASH_HOOK_FILE")" || return 1
+	temp_file="$(new_temp_file)" || return 1
+
+	if ! {
+		dd if="$OPENCLASH_HOOK_FILE" bs=1 count="$begin_offset" 2>/dev/null
+		dd if="$OPENCLASH_HOOK_FILE" bs=1 skip="$suffix_offset" 2>/dev/null
+	} >"$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+
+	finish_replacement "$temp_file" "$mode" "$owner"
+}
+
+exec 9>"$LOCK_FILE" || exit 1
+flock -x 9 || exit 1
+case "${1:-}" in
+	reconcile-hook) openclash_installed || exit 0; reconcile_hook ;;
+	cleanup) cleanup_hook ;;
+	*) printf 'usage: %s {reconcile-hook|cleanup}\n' "$0" >&2; exit 2 ;;
+esac
