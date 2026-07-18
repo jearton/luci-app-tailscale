@@ -7,5 +7,10 @@ uci -q batch <<-EOF >/dev/null
 	commit ucitrack
 EOF
 
+if [ -x /etc/init.d/tailscale-openclash-bypass ]; then
+	/etc/init.d/tailscale-openclash-bypass enable
+	/etc/init.d/tailscale-openclash-bypass start
+fi
+
 rm -f /tmp/luci-indexcache
 exit 0
