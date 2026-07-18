@@ -121,6 +121,10 @@ if [ "${DD_FAIL_PREFIX:-0}" = 1 ] && [ "$has_count" = 1 ] && [ "$has_skip" = 0 ]
 	printf 'failed: %s\n' "$*" >>"${DD_LOG:?}"
 	exit 1
 fi
+if [ "${DD_FAIL_PROBE:-0}" = 1 ] && [ "$has_count" = 1 ] && [ "$has_skip" = 1 ]; then
+	printf 'probe-failed: %s\n' "$*" >>"${DD_LOG:?}"
+	exit 1
+fi
 if [ "${DD_SIGNAL_PARENT:-0}" = 1 ] && [ "$has_count" = 1 ] && [ "$has_skip" = 0 ]; then
 	printf 'signalled: %s\n' "$*" >>"${DD_LOG:?}"
 	kill -TERM "$PPID"
@@ -540,6 +544,7 @@ run_helper() {
 	LOGGER_CMD="$TMP_DIR/bin/logger" \
 	TMPDIR="$TMP_DIR/tmp" \
 	DD_FAIL_PREFIX="${DD_FAIL_PREFIX:-0}" \
+	DD_FAIL_PROBE="${DD_FAIL_PROBE:-0}" \
 	DD_SIGNAL_PARENT="${DD_SIGNAL_PARENT:-0}" \
 	FEATURE_ENABLED="${FEATURE_ENABLED:-}" \
 	UCI_SECTION_MODE="${UCI_SECTION_MODE:-present}" \
@@ -591,6 +596,19 @@ first_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
 run_helper reconcile-hook
 [ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$first_hash" ] || fail 'reconcile-hook is not idempotent'
 
+probe_reconcile_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+probe_reconcile_permissions="$(file_permissions "$HOOK")"
+: >"$DD_LOG"
+if DD_FAIL_PROBE=1 run_helper reconcile-hook; then
+	fail 'reconcile-hook must fail when the optional-newline probe cannot be read'
+fi
+DD_FAIL_PROBE=0
+grep -F 'probe-failed:' "$DD_LOG" >/dev/null || fail 'reconcile-hook did not execute the failing newline probe'
+[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$probe_reconcile_hash" ] || \
+	fail 'reconcile-hook changed hook after newline probe failure'
+[ "$(file_permissions "$HOOK")" = "$probe_reconcile_permissions" ] || \
+	fail 'reconcile-hook changed hook mode after newline probe failure'
+
 sed 's#^[[:space:]]*/usr/sbin/tailscale_openclash_bypass apply$#\tprintf stale-managed-body#' "$HOOK" >"$TMP_DIR/stale-hook"
 chmod 750 "$TMP_DIR/stale-hook"
 mv "$TMP_DIR/stale-hook" "$HOOK"
@@ -611,6 +629,19 @@ fi
 [ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$malformed_hash" ] || fail 'malformed hook changed after rejection'
 
 cp "$TMP_DIR/hook-before-malformed" "$HOOK"
+probe_cleanup_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+probe_cleanup_permissions="$(file_permissions "$HOOK")"
+: >"$DD_LOG"
+if DD_FAIL_PROBE=1 run_helper cleanup; then
+	fail 'cleanup must fail when the optional-newline probe cannot be read'
+fi
+DD_FAIL_PROBE=0
+grep -F 'probe-failed:' "$DD_LOG" >/dev/null || fail 'cleanup did not execute the failing newline probe'
+[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$probe_cleanup_hash" ] || \
+	fail 'cleanup changed hook after newline probe failure'
+[ "$(file_permissions "$HOOK")" = "$probe_cleanup_permissions" ] || \
+	fail 'cleanup changed hook mode after newline probe failure'
+
 failed_cleanup_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
 failed_cleanup_mode="$(file_mode "$HOOK")"
 failed_cleanup_owner="$(file_owner "$HOOK")"
@@ -655,6 +686,21 @@ run_helper reconcile-hook
 run_helper cleanup
 [ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$no_newline_hash" ] || \
 	fail 'cleanup did not restore a hook without a trailing newline'
+
+for special_mode in 4640 1750 1751 7777; do
+	printf '#!/bin/sh\nprintf user-special-mode-%s\n' "$special_mode" >"$HOOK"
+	chmod "$special_mode" "$HOOK"
+	special_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
+	special_permissions="$(file_permissions "$HOOK")"
+	run_helper reconcile-hook
+	[ "$(file_permissions "$HOOK")" = "$special_permissions" ] || \
+		fail "reconcile-hook changed special permission mode $special_mode"
+	run_helper cleanup
+	[ "$(sha256sum "$HOOK" | awk '{print $1}')" = "$special_hash" ] || \
+		fail "cleanup did not restore bytes for special permission mode $special_mode"
+	[ "$(file_permissions "$HOOK")" = "$special_permissions" ] || \
+		fail "cleanup changed special permission mode $special_mode"
+done
 
 rm -f "$TMP_DIR/openclash-init" "$HOOK"
 run_helper reconcile-hook

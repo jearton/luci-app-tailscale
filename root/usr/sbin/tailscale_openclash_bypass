@@ -141,7 +141,16 @@ file_owner() {
 }
 
 byte_is_newline() {
-	dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | grep -q '^$'
+	newline='
+'
+	probe="$({
+		dd if="$1" bs=1 skip="$2" count=1 2>/dev/null
+		printf '.%s' "$?"
+	})"
+	probe_status="${probe##*.}"
+	byte="${probe%.*}"
+	[ "$probe_status" = 0 ] || return 2
+	[ "$byte" = "$newline" ]
 }
 
 shebang_size() {
@@ -219,8 +228,13 @@ reconcile_hook() {
 			end_offset="${rest#*|}"
 			end_length="$(printf '%s' "$END_MARKER" | wc -c | tr -d '[:space:]')"
 			suffix_offset=$((end_offset + end_length))
-			byte_is_newline "$OPENCLASH_HOOK_FILE" "$suffix_offset" && \
-				suffix_offset=$((suffix_offset + 1))
+			byte_is_newline "$OPENCLASH_HOOK_FILE" "$suffix_offset"
+			byte_result=$?
+			case "$byte_result" in
+				0) suffix_offset=$((suffix_offset + 1)) ;;
+				1) ;;
+				*) return 1 ;;
+			esac
 			;;
 		*) return 1 ;;
 	esac
@@ -258,8 +272,13 @@ cleanup_hook() {
 	end_offset="${rest#*|}"
 	end_length="$(printf '%s' "$END_MARKER" | wc -c | tr -d '[:space:]')"
 	suffix_offset=$((end_offset + end_length))
-	byte_is_newline "$OPENCLASH_HOOK_FILE" "$suffix_offset" && \
-		suffix_offset=$((suffix_offset + 1))
+	byte_is_newline "$OPENCLASH_HOOK_FILE" "$suffix_offset"
+	byte_result=$?
+	case "$byte_result" in
+		0) suffix_offset=$((suffix_offset + 1)) ;;
+		1) ;;
+		*) return 1 ;;
+	esac
 
 	mode="$(file_mode "$OPENCLASH_HOOK_FILE")" || return 1
 	owner="$(file_owner "$OPENCLASH_HOOK_FILE")" || return 1

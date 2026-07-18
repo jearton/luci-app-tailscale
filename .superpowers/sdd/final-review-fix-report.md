@@ -103,6 +103,17 @@ Temporary test paths in two failure messages are normalized as `<tmp>`; all othe
 - GREEN command: `sh tests/tailscale_openclash_bypass_test.sh`
 - GREEN result: exit 0, `tailscale OpenClash bypass tests passed`
 
+### Compatibility re-review: byte-read errors and special modes
+
+- A fresh independent review found that a POSIX pipeline exposed only the final `grep` status, so an underlying `dd` failure could be mistaken for an ordinary non-newline byte at the optional suffix boundary.
+- RED command: `sh tests/tailscale_openclash_bypass_test.sh`
+- RED result: exit 1, `FAIL: reconcile-hook must fail when the optional-newline probe cannot be read`
+- The byte probe now appends and parses the `dd` status without losing a leading newline to command substitution. It returns three distinct states: newline, non-newline/EOF, and read error.
+- Both optional-newline call sites now abort atomic replacement on a read error.
+- Added special-mode reconciliation and cleanup coverage for `4640`, `1750`, `1751`, and `7777`, in addition to the existing `6750` check. This covers uppercase and lowercase setuid/setgid/sticky renderings (`S/s/T/t`).
+- GREEN command: `sh tests/tailscale_openclash_bypass_test.sh`
+- GREEN result: exit 0, `tailscale OpenClash bypass tests passed`
+
 The complete 11-file shell suite and 4-file JavaScript suite also passed after the compatibility correction GREEN.
 
 ## Final verification
