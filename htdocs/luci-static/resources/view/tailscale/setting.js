@@ -342,11 +342,11 @@ async function refreshAdguardPreflightStatus() {
 
 function renderOpenclashBypassStatus(status) {
 	const labels = {
-		active: _('Enabled and active'),
+		active: _('Enabled; 4 bypass rules are active'),
 		waiting: _('Enabled; waiting for OpenClash nftables chains'),
-		disabled: _('Disabled'),
-		absent: _('OpenClash is not installed'),
-		unsupported: _('Unsupported: firewall4/nftables is required'),
+		disabled: _('Disabled; Tailscale traffic is handled by OpenClash'),
+		absent: _('OpenClash is not installed; bypass is not required'),
+		unsupported: _('Unsupported; firewall4/nftables is required'),
 		error: _('Configuration error')
 	};
 	return labels[status && status.state] || _('Unknown status');
@@ -797,8 +797,8 @@ return view.extend({
 
 		s.tab('openclash', _('OpenClash'));
 
-		o = s.taboption('openclash', form.Flag, 'openclash_bypass_enabled', _('Enable OpenClash Bypass'),
-			_('Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service.'));
+		o = s.taboption('openclash', form.Flag, 'openclash_bypass_enabled', _('Protect Tailscale Traffic (Bypass OpenClash)'),
+			_('Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash.'));
 		o.default = o.enabled;
 		o.rmempty = false;
 		o.cfgvalue = function() {

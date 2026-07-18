@@ -593,20 +593,20 @@ msgstr "未知使用者"
 msgid "Offline peers cannot be probed"
 msgstr "離線設備不可探測"
 
-msgid "Enabled and active"
-msgstr "已啟用並生效"
+msgid "Enabled; 4 bypass rules are active"
+msgstr "已開啟，4 條繞過規則已生效"
 
 msgid "Enabled; waiting for OpenClash nftables chains"
-msgstr "已啟用，等待 OpenClash 建立 nftables 鏈"
+msgstr "已開啟，正在等待 OpenClash 建立 nftables 鏈"
 
-msgid "Disabled"
-msgstr "已停用"
+msgid "Disabled; Tailscale traffic is handled by OpenClash"
+msgstr "已關閉，Tailscale 流量將由 OpenClash 處理"
 
-msgid "OpenClash is not installed"
-msgstr "未安裝 OpenClash"
+msgid "OpenClash is not installed; bypass is not required"
+msgstr "未安裝 OpenClash，無需繞過"
 
-msgid "Unsupported: firewall4/nftables is required"
-msgstr "不支援：需要 firewall4/nftables"
+msgid "Unsupported; firewall4/nftables is required"
+msgstr "目前系統不支援，僅支援 firewall4/nftables"
 
 msgid "Configuration error"
 msgstr "設定錯誤"
@@ -620,8 +620,8 @@ msgstr "無法讀取 OpenClash 繞過狀態。"
 msgid "OpenClash"
 msgstr "OpenClash"
 
-msgid "Enable OpenClash Bypass"
-msgstr "啟用 OpenClash 繞過"
+msgid "Protect Tailscale Traffic (Bypass OpenClash)"
+msgstr "保護 Tailscale 流量（繞過 OpenClash）"
 
-msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."
-msgstr "繞過 OpenClash，讓帶有 Tailscale 標記的主機流量及從 tailscale0 進入的流量不經代理。此功能不會重新載入 firewall4，也不會管理 OpenClash 服務。"
+msgid "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash."
+msgstr "開啟後，Tailscale 控制連線、直連通訊、Tailnet DNS 和跨子網流量不會被 OpenClash 接管。關閉後，這些流量將重新經過 OpenClash，節點在線、點對點直連、跨子網存取和 Tailnet DNS 解析不再受本功能保護；如果 OpenClash 規則接管或重新導向這些流量，可能導致節點離線、直連退化為 DERP、跨子網存取或 Tailnet DNS 中斷。使用 OpenClash 時必須保持開啟。"
