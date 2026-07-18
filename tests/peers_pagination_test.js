@@ -67,6 +67,15 @@ const normalizedPeers = parseStatus(JSON.stringify({
 		'1': { DisplayName: 'Zeta User', LoginName: 'zeta@example.test' },
 		'2': { DisplayName: 'Alpha User', LoginName: 'alpha@example.test' }
 	},
+	Self: {
+		ID: 'self-node',
+		HostName: 'hz-office-openwrt',
+		DNSName: 'hz-office-openwrt.example.ts.net.',
+		TailscaleIPs: ['100.64.2.15'],
+		PrimaryRoutes: ['192.168.100.0/24'],
+		UserID: 2,
+		Online: true
+	},
 	Peer: {
 		'node:gateway': {
 			HostName: 'gateway',
@@ -94,15 +103,41 @@ const normalizedPeers = parseStatus(JSON.stringify({
 	}
 }));
 
-assert(normalizedPeers.map(item => item.id).join(',') === 'node:unknown,node:alpha,node:gateway', 'status peers should normalize names and sort deterministically');
-assert(normalizedPeers[1].name === 'alpha (legacy-host)', 'status normalization should combine distinct short DNS and host names');
-assert(normalizedPeers[2].probeTarget === '100.64.0.20', 'status normalization should prefer the Tailscale IP as probe target');
-assert(normalizedPeers[2].routes.join(',') === '10.20.0.0/24' && normalizedPeers[2].hasSubnetRoutes, 'status normalization should remove empty routes and flag advertised subnets');
-assert(normalizedPeers[0].userKey === 'unknown', 'missing user IDs should normalize into the unknown group');
+assert(normalizedPeers.map(item => item.id).join(',') === 'node:unknown,node:alpha,node:gateway,self-node', 'status peers should normalize names and sort deterministically');
+assert(normalizedPeers.find(item => item.id === 'node:alpha').name === 'alpha (legacy-host)', 'status normalization should combine distinct short DNS and host names');
+assert(normalizedPeers.find(item => item.id === 'node:gateway').probeTarget === '100.64.0.20', 'status normalization should prefer the Tailscale IP as probe target');
+assert(normalizedPeers.find(item => item.id === 'node:gateway').routes.join(',') === '10.20.0.0/24' && normalizedPeers.find(item => item.id === 'node:gateway').hasSubnetRoutes, 'status normalization should remove empty routes and flag advertised subnets');
+assert(normalizedPeers.find(item => item.id === 'node:unknown').userKey === 'unknown', 'missing user IDs should normalize into the unknown group');
+const selfPeer = normalizedPeers.find(item => item.isSelf);
+assert(selfPeer && selfPeer.name === 'hz-office-openwrt', 'Self should be normalized into the device list');
+assert(selfPeer.userName === 'Alpha User', 'Self should resolve its owner through UserID');
+assert(selfPeer.routes.join(',') === '192.168.100.0/24', 'Self should preserve its advertised routes');
 
 const normalizedGroups = buildPeerGroups(normalizedPeers);
 assert(normalizedGroups.map(item => item.name).join(',') === 'Alpha User,Unknown user,Zeta User', 'peer groups should sort by normalized user display name');
 assert(normalizedGroups[0].peers[0].id === 'node:gateway', 'peer grouping should retain the normalized user association');
+const alphaGroup = normalizedGroups.find(item => item.key === '2');
+assert(alphaGroup && alphaGroup.peers.length === 2, 'Self and regular peers with the same UserID should share one user group');
+assert(alphaGroup.peers.some(item => item.isSelf) && alphaGroup.peers.some(item => item.id === 'node:gateway'), 'shared user group should contain both Self and the regular peer');
+const normalizedPage = paginatePeerGroups(normalizedGroups, 1, 1);
+assert(normalizedPage.total === normalizedPeers.length, 'Self should be included in the paginated peer count');
+assert(normalizedPage.groups.length === 1 && normalizedPage.groups[0].peers[0].isSelf, 'Self should participate in pagination as a peer entry');
+
+const peerOnlyPeers = parseStatus(JSON.stringify({
+	User: {
+		'3': { DisplayName: 'Peer Only User' }
+	},
+	Peer: {
+		'node:peer-only': {
+			HostName: 'peer-only-host',
+			TailscaleIPs: ['100.64.0.50'],
+			UserID: 3,
+			Online: true
+		}
+	}
+}));
+assert(peerOnlyPeers.length === 1 && peerOnlyPeers[0].id === 'node:peer-only', 'status without Self should preserve the peer-only list');
+assert(!peerOnlyPeers[0].isSelf && peerOnlyPeers[0].userName === 'Peer Only User', 'peer-only status should remain compatible with existing user normalization');
 
 const largeUserId = '9007199254740993';
 const largeIdPeers = parseStatus(`{"User":{"${largeUserId}":{"DisplayName":"Large ID User"}},"Peer":{"node:large":{"HostName":"large-id-peer","TailscaleIPs":["100.64.0.99"],"UserID":${largeUserId},"Online":true}}}`);
@@ -128,6 +163,22 @@ function createElement(tag, attrs, children) {
 		attrs: attrs || {},
 		children: children == null ? [] : (Array.isArray(children) ? children : [children])
 	};
+}
+
+function findRowWithText(node, text) {
+	if (!node || typeof node !== 'object')
+		return null;
+
+	if (node.tag === 'tr' && JSON.stringify(node).includes(text))
+		return node;
+
+	for (const child of (node.children || []).concat(node.content || [])) {
+		const row = findRowWithText(child, text);
+		if (row)
+			return row;
+	}
+
+	return null;
 }
 
 async function testRefreshFailureClearsStaleRows() {
@@ -186,7 +237,48 @@ async function testRefreshFailureClearsStaleRows() {
 	assert(refreshed.includes('No peers found'), 'failed refresh should render the empty peer state');
 }
 
-testRefreshFailureClearsStaleRows().then(() => {
+async function testCurrentDeviceRendersWithoutProbeAction() {
+	const viewContext = {
+		console,
+		_: value => value,
+		E: createElement,
+		dom: { content: (node, content) => { node.content = content; } },
+		fs: { exec: async () => ({ code: 0, stdout: '{}' }) },
+		poll: { add: () => {} },
+		view: { extend: value => value }
+	};
+	const viewObject = vm.runInNewContext(`
+		String.prototype.format = function() {
+			var args = arguments;
+			var index = 0;
+			return String(this).replace(/%[sd]/g, function() { return String(args[index++]); });
+		};
+		(function() { ${source}\n })();
+	`, viewContext);
+	const currentDevice = {
+		id: 'self-node',
+		name: 'hz-office-openwrt',
+		ip: '100.64.2.15',
+		userKey: '2',
+		userName: 'Alpha User',
+		userLoginName: 'alpha@example.test',
+		online: true,
+		lastSeen: '-',
+		exitNode: false,
+		routes: ['192.168.100.0/24'],
+		hasSubnetRoutes: true,
+		probeTarget: '100.64.2.15',
+		isSelf: true
+	};
+	const rendered = viewObject.render({ ok: true, peers: [currentDevice], error: '' });
+	const serialized = JSON.stringify(rendered);
+	const currentDeviceRow = findRowWithText(rendered, currentDevice.name);
+
+	assert(serialized.includes('Current device'), 'current device row should show a current-device probe cell');
+	assert(currentDeviceRow && !JSON.stringify(currentDeviceRow).includes('Probe'), 'current device row should not render a Probe action');
+}
+
+Promise.all([testRefreshFailureClearsStaleRows(), testCurrentDeviceRendersWithoutProbeAction()]).then(() => {
 	console.log('peers pagination and behavior tests passed');
 }).catch(error => {
 	console.error(error);
