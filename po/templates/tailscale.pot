@@ -588,7 +588,7 @@ msgid "Offline peers cannot be probed"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:345
-msgid "Enabled and active"
+msgid "Enabled; 4 bypass rules are active"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:346
@@ -596,15 +596,15 @@ msgid "Enabled; waiting for OpenClash nftables chains"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:347
-msgid "Disabled"
+msgid "Disabled; Tailscale traffic is handled by OpenClash"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:348
-msgid "OpenClash is not installed"
+msgid "OpenClash is not installed; bypass is not required"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:349
-msgid "Unsupported: firewall4/nftables is required"
+msgid "Unsupported; firewall4/nftables is required"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:350
@@ -624,9 +624,9 @@ msgid "OpenClash"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:800
-msgid "Enable OpenClash Bypass"
+msgid "Protect Tailscale Traffic (Bypass OpenClash)"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:801
-msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."
+msgid "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash."
 msgstr ""
