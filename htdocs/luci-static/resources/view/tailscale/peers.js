@@ -36,8 +36,8 @@ function parseStatus(stdout) {
 	var userEntries = parsed && parsed.User ? parsed.User : {};
 	var peers = [];
 
-	Object.keys(peerEntries).forEach(function(peerId) {
-		var peer = peerEntries[peerId] || {};
+	function appendPeer(peerId, peer, isSelf) {
+		peer = peer || {};
 		var ip = Array.isArray(peer.TailscaleIPs) ? (peer.TailscaleIPs[0] || '') : '';
 		var dnsName = String(peer.DNSName || '').replace(/\.$/, '');
 		var shortDnsName = dnsName ? dnsName.split('.')[0] : '';
@@ -63,8 +63,20 @@ function parseStatus(stdout) {
 			exitNode: !!peer.ExitNodeOption,
 			routes: routes,
 			hasSubnetRoutes: routes.length > 0,
-			probeTarget: ip || hostName || dnsName || shortDnsName
+			probeTarget: ip || hostName || dnsName || shortDnsName,
+			isSelf: !!isSelf
 		});
+	}
+
+	if (parsed && parsed.Self) {
+		var self = parsed.Self;
+		var selfId = self.ID || self.PublicKey || self.HostName || 'self';
+
+		appendPeer(selfId, self, true);
+	}
+
+	Object.keys(peerEntries).forEach(function(peerId) {
+		appendPeer(peerId, peerEntries[peerId], false);
 	});
 
 	peers.sort(function(a, b) {
@@ -511,26 +523,39 @@ return view.extend({
 					));
 
 					group.peers.forEach(function(peer) {
-						var result = state.probeResults[peer.id];
-						var probing = !!state.probing[peer.id];
-						var button = E('button', {
-							type: 'button',
-							class: 'btn cbi-button cbi-button-action',
-							disabled: probing || !peer.online ? 'disabled' : null,
-							click: function(ev) {
-								if (ev) {
-									ev.preventDefault();
-									ev.stopPropagation();
-								}
+						var probeCell;
 
-								return probePeer(peer);
-							}
-						}, probing ? _('Probing...') : _('Probe'));
-						var resultNode = !peer.online
-							? E('span', { style: 'color:#94a3b8' }, _('Offline peers cannot be probed'))
-							: (result ? renderProbeResult(result) : (probing
-								? E('span', { style: 'color:#64748b' }, _('Probing...'))
-								: renderProbeResult(result)));
+						if (peer.isSelf) {
+							probeCell = E('span', { style: 'font-weight:600;color:#475569' }, _('Current device'));
+						} else {
+							var result = state.probeResults[peer.id];
+							var probing = !!state.probing[peer.id];
+							var button = E('button', {
+								type: 'button',
+								class: 'btn cbi-button cbi-button-action',
+								disabled: probing || !peer.online ? 'disabled' : null,
+								click: function(ev) {
+									if (ev) {
+										ev.preventDefault();
+										ev.stopPropagation();
+									}
+
+									return probePeer(peer);
+								}
+							}, probing ? _('Probing...') : _('Probe'));
+							var resultNode = !peer.online
+								? E('span', { style: 'color:#94a3b8' }, _('Offline peers cannot be probed'))
+								: (result ? renderProbeResult(result) : (probing
+									? E('span', { style: 'color:#64748b' }, _('Probing...'))
+									: renderProbeResult(result)));
+
+							probeCell = E('div', {
+								style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap'
+							}, [
+								button,
+								resultNode
+							]);
+						}
 
 						rows.push(E('tr', {
 							class: 'tr',
@@ -542,12 +567,7 @@ return view.extend({
 							E('td', { class: 'td left' }, peer.lastSeen || '-'),
 							E('td', { class: 'td left' }, renderRoleBadges(peer)),
 							E('td', { class: 'td left' }, peer.routes.length ? peer.routes.join(', ') : '-'),
-							E('td', { class: 'td left' }, E('div', {
-								style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap'
-							}, [
-								button,
-								resultNode
-							]))
+							E('td', { class: 'td left' }, probeCell)
 						]));
 					});
 				});
@@ -583,7 +603,7 @@ return view.extend({
 			var target = peer.probeTarget;
 			var attempt;
 
-			if (!peer.online)
+			if (peer.isSelf || !peer.online)
 				return;
 
 			if (!target) {
