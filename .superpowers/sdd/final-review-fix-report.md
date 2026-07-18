@@ -19,6 +19,8 @@ A second independent whole-branch review found five additional reconciliation is
 4. Status validates UCI and disabled managed artifacts before treating an absent `inet fw4` table as unsupported.
 5. If any target OpenClash chain is absent, reconciliation removes any surviving package-owned partial rule set and waits without installing a subset.
 
+A final focused review found one remaining apply-time race: a target chain could disappear after the initial complete table snapshot but before its individual chain read. That path now removes package-owned rules from all surviving chains instead of returning with a partial rule set.
+
 ## Strict TDD evidence
 
 Temporary test paths in two failure messages are normalized as `<tmp>`; all other output is verbatim.
@@ -82,6 +84,13 @@ Temporary test paths in two failure messages are normalized as `<tmp>`; all othe
 
 - Added regression coverage for invalid UCI with no fw4 table, disabled hook residue with no fw4 table, clean disabled state with no fw4 table, and a missing target chain with surviving partial owned rules.
 - GREEN result: `tailscale OpenClash bypass tests passed`
+
+### Final review: apply-time chain disappearance
+
+- RED command: `sh tests/tailscale_openclash_bypass_test.sh`
+- RED result: exit 1, `FAIL: apply did not clean surviving owned rules after a target chain disappeared during inspection`
+- GREEN command: `sh -n root/usr/sbin/tailscale_openclash_bypass && sh -n tests/tailscale_openclash_bypass_test.sh && sh tests/tailscale_openclash_bypass_test.sh`
+- GREEN result: exit 0, `tailscale OpenClash bypass tests passed`
 
 The complete 11-file shell suite and 4-file JavaScript suite also passed after each correction GREEN.
 
@@ -168,6 +177,7 @@ The pre-existing modifications to task-1 through task-4 reports were preserved b
 - Confirmed cleanup failure leaves the hook retryable and disabled status reports both hook and rule residue.
 - Confirmed structurally invalid chain JSON cannot trigger apply or cleanup mutation.
 - Confirmed a missing target chain removes surviving partial owned rules and never installs an incomplete set.
+- Confirmed a target chain disappearing after the initial snapshot also removes the surviving partial owned rules and reports a residue-free waiting state.
 - Confirmed OpenWrt 24.10.5 / nftables 1.1.1 real chain JSON satisfies the strict validator.
 - Confirmed only the five files listed above belong to this fix wave.
 

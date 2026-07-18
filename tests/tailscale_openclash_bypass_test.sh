@@ -785,6 +785,24 @@ run_helper apply
 [ "$(grep -c 'comment "luci-app-tailscale:' "$NFT_STATE")" = 4 ] || \
 	fail 'apply did not restore the complete rule set after the missing chain returned'
 
+: >"$NFT_DISAPPEARED_FILE"
+: >"$NFT_BATCH_LOG"
+: >"$NFT_CALL_LOG"
+DISAPPEAR_CHAIN=openclash_output run_helper apply
+[ -s "$NFT_BATCH_LOG" ] || \
+	fail 'apply did not clean surviving owned rules after a target chain disappeared during inspection'
+grep -F 'luci-app-tailscale:' "$NFT_STATE" | grep -Fv 'openclash_output ' >/dev/null && \
+	fail 'apply left a partial owned rule set after a target chain disappeared during inspection'
+printf '%s' "$(DISAPPEAR_CHAIN=openclash_output run_helper status)" | \
+	jq -e '.state == "waiting" and .hook == "managed" and .rules_present == 0' >/dev/null || \
+	fail 'apply-time chain disappearance did not report a residue-free waiting state'
+DISAPPEAR_CHAIN=
+: >"$NFT_DISAPPEARED_FILE"
+: >"$NFT_STATE"
+run_helper apply
+[ "$(grep -c 'comment "luci-app-tailscale:' "$NFT_STATE")" = 4 ] || \
+	fail 'apply did not restore the complete rule set after an inspected chain returned'
+
 : >"$NFT_BATCH_LOG"
 : >"$NFT_CALL_LOG"
 state_before_list_failure="$(sha256sum "$NFT_STATE" | awk '{print $1}')"

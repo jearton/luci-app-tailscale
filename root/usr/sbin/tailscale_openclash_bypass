@@ -597,8 +597,17 @@ apply_rules() {
 		if ! chain_json="$("$NFT_BIN" -j -a list chain inet fw4 "$chain" 2>/dev/null)"; then
 			refreshed_state="$(refreshed_chain_state "$chain")" || refreshed_state=unsupported
 			case "$refreshed_state" in
-				absent|table-absent)
-					discard_nft_guard
+				absent)
+					if ! discard_nft_guard; then
+						discard_nft_cache
+						return 1
+					fi
+					discard_nft_cache
+					cleanup_rules
+					return $?
+					;;
+				table-absent)
+					NFT_GUARD_NAME=
 					discard_nft_cache
 					return 0
 					;;
