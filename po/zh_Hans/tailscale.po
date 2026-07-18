@@ -68,6 +68,10 @@ msgstr "正在收集数据..."
 msgid "Custom Server Settings"
 msgstr "自定义服务器"
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:529
+msgid "Current device"
+msgstr "当前设备"
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:182
 msgid "Device Name"
 msgstr "设备名称"

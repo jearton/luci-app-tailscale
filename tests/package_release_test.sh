@@ -571,6 +571,10 @@ assert_contains 'msgid "Unknown user"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "未知用户"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Unknown user"' po/zh_Hant/tailscale.po
 assert_contains 'msgstr "未知使用者"' po/zh_Hant/tailscale.po
+assert_contains "peer.isSelf" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_contains "Current device" htdocs/luci-static/resources/view/tailscale/peers.js
+assert_po_entry "Current device" "当前设备" po/zh_Hans/tailscale.po
+assert_po_entry "Current device" "目前設備" po/zh_Hant/tailscale.po
 assert_contains "Advertising subnets" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "tailscale_peer_probe" htdocs/luci-static/resources/view/tailscale/peers.js
 assert_contains "Probe" htdocs/luci-static/resources/view/tailscale/peers.js

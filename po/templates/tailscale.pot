@@ -62,6 +62,10 @@ msgstr ""
 msgid "Custom Server Settings"
 msgstr ""
 
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/peers.js:529
+msgid "Current device"
+msgstr ""
+
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:182
 msgid "Device Name"
 msgstr ""
