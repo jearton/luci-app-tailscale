@@ -12,6 +12,11 @@ assert(source.includes("uci.load('tailscale_openclash')"), 'setting view must lo
 assert(source.includes("method: 'openclash_bypass_status'"), 'setting view must use the read-only status RPC');
 assert(source.includes("uci.set('tailscale_openclash', 'settings', 'enabled'"), 'toggle must write only the isolated UCI package');
 assert(!source.includes("uci.set('tailscale', section_id, 'openclash"), 'toggle must not write the core Tailscale UCI package');
+assert(source.includes("_('Protect Tailscale Traffic (Bypass OpenClash)')"), 'toggle must explain that it protects Tailscale traffic');
+assert(source.includes("_('Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash.')"), 'description must name the protected traffic and disabled impact');
+assert(source.includes("_('Enabled; 4 bypass rules are active')"), 'active status must report the concrete rule state');
+assert(source.includes("_('Disabled; Tailscale traffic is handled by OpenClash')"), 'disabled status must state the traffic impact');
+assert(!source.includes("_('Enable OpenClash Bypass')"), 'old implementation-only toggle copy must be removed');
 
 const loadMatch = source.match(/load\(\)\s*\{([\s\S]*?)\n\t\},\n\n\trender/);
 assert(loadMatch, 'expected setting view to define a load() method');
@@ -271,7 +276,7 @@ function scheduledOpenclashRefresh(runtime) {
 	assert(initialRefresh && initialRefresh.delay === 0, 'render() must queue the OpenClash status refresh immediately after rendering');
 	assert(initialNode && initialNode.textContent === 'Checking ...', 'render() must create the initial OpenClash status node');
 	await initialRefresh.callback();
-	assert(initialNode.textContent === 'Enabled and active', 'async status refresh must update the rendered status node');
+	assert(initialNode.textContent === 'Enabled; 4 bypass rules are active', 'async status refresh must update the rendered status node');
 
 	const map = runtime.maps.find(candidate => candidate.config === 'tailscale');
 	const openclashOption = map.options().find(option => option.tab === 'openclash' && option.option === 'openclash_bypass_enabled');
@@ -298,7 +303,7 @@ function scheduledOpenclashRefresh(runtime) {
 	assert(savedNode.textContent === 'Checking ...', 'the replacement status node must start in checking state');
 	assert(savedRefresh && savedRefresh.delay === 0, 'successful save() must queue a status refresh after renderContents()');
 	await savedRefresh.callback();
-	assert(savedNode.textContent === 'Enabled and active', 'post-save refresh must update the replacement status node');
+	assert(savedNode.textContent === 'Enabled; 4 bypass rules are active', 'post-save refresh must update the replacement status node');
 
 	console.log('setting OpenClash bypass tests passed');
 })().catch(error => {

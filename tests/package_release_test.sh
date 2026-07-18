@@ -83,12 +83,12 @@ assert_po_entry_mutation_test() {
 	mutated_po="$(mktemp "$ROOT_DIR/tests/package_release_test.XXXXXX")"
 	trap 'rm -f "$mutated_po"' 0 HUP INT TERM
 	awk '
-		$0 == "msgstr \"已启用并生效\"" { print "msgstr \"已禁用\""; next }
-		$0 == "msgstr \"已禁用\"" { print "msgstr \"已启用并生效\""; next }
+		$0 == "msgstr \"已开启，4 条绕过规则已生效\"" { print "msgstr \"已关闭，Tailscale 流量将由 OpenClash 处理\""; next }
+		$0 == "msgstr \"已关闭，Tailscale 流量将由 OpenClash 处理\"" { print "msgstr \"已开启，4 条绕过规则已生效\""; next }
 		{ print }
 	' "$ROOT_DIR/po/zh_Hans/tailscale.po" > "$mutated_po"
 
-	if (assert_po_entry "Enabled and active" "已启用并生效" "$mutated_po") >/dev/null 2>&1; then
+	if (assert_po_entry "Enabled; 4 bypass rules are active" "已开启，4 条绕过规则已生效" "$mutated_po") >/dev/null 2>&1; then
 		fail "assert_po_entry must reject swapped PO translations"
 	fi
 
@@ -276,44 +276,44 @@ assert_not_contains "/etc/init.d/firewall" root/usr/sbin/tailscale_openclash_byp
 assert_not_contains "/etc/init.d/openclash reload" root/usr/sbin/tailscale_openclash_bypass
 assert_not_contains "/etc/init.d/openclash restart" root/usr/sbin/tailscale_openclash_bypass
 assert_contains 'msgid "OpenClash"' po/templates/tailscale.pot
-assert_contains 'msgid "Enable OpenClash Bypass"' po/templates/tailscale.pot
+assert_contains 'msgid "Protect Tailscale Traffic (Bypass OpenClash)"' po/templates/tailscale.pot
 assert_contains 'msgid "Status"' po/templates/tailscale.pot
 assert_contains 'msgid "Checking ..."' po/templates/tailscale.pot
-assert_contains 'msgid "Enabled and active"' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled; 4 bypass rules are active"' po/templates/tailscale.pot
 assert_contains 'msgid "Enabled; waiting for OpenClash nftables chains"' po/templates/tailscale.pot
-assert_contains 'msgid "Disabled"' po/templates/tailscale.pot
-assert_contains 'msgid "OpenClash is not installed"' po/templates/tailscale.pot
-assert_contains 'msgid "Unsupported: firewall4/nftables is required"' po/templates/tailscale.pot
+assert_contains 'msgid "Disabled; Tailscale traffic is handled by OpenClash"' po/templates/tailscale.pot
+assert_contains 'msgid "OpenClash is not installed; bypass is not required"' po/templates/tailscale.pot
+assert_contains 'msgid "Unsupported; firewall4/nftables is required"' po/templates/tailscale.pot
 assert_contains 'msgid "Configuration error"' po/templates/tailscale.pot
 assert_contains 'msgid "Unknown status"' po/templates/tailscale.pot
 assert_contains 'msgid "Unable to read OpenClash bypass status."' po/templates/tailscale.pot
-assert_contains 'msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."' po/templates/tailscale.pot
+assert_contains 'msgid "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash."' po/templates/tailscale.pot
 assert_po_entry "OpenClash" "OpenClash" po/zh_Hans/tailscale.po
-assert_po_entry "Enable OpenClash Bypass" "启用 OpenClash 绕过" po/zh_Hans/tailscale.po
+assert_po_entry "Protect Tailscale Traffic (Bypass OpenClash)" "保护 Tailscale 流量（绕过 OpenClash）" po/zh_Hans/tailscale.po
 assert_po_entry "Status" "状态" po/zh_Hans/tailscale.po
 assert_po_entry "Checking ..." "检查中..." po/zh_Hans/tailscale.po
-assert_po_entry "Enabled and active" "已启用并生效" po/zh_Hans/tailscale.po
-assert_po_entry "Enabled; waiting for OpenClash nftables chains" "已启用，等待 OpenClash 创建 nftables 链" po/zh_Hans/tailscale.po
-assert_po_entry "Disabled" "已禁用" po/zh_Hans/tailscale.po
-assert_po_entry "OpenClash is not installed" "未安装 OpenClash" po/zh_Hans/tailscale.po
-assert_po_entry "Unsupported: firewall4/nftables is required" "不支持：需要 firewall4/nftables" po/zh_Hans/tailscale.po
+assert_po_entry "Enabled; 4 bypass rules are active" "已开启，4 条绕过规则已生效" po/zh_Hans/tailscale.po
+assert_po_entry "Enabled; waiting for OpenClash nftables chains" "已开启，正在等待 OpenClash 创建 nftables 链" po/zh_Hans/tailscale.po
+assert_po_entry "Disabled; Tailscale traffic is handled by OpenClash" "已关闭，Tailscale 流量将由 OpenClash 处理" po/zh_Hans/tailscale.po
+assert_po_entry "OpenClash is not installed; bypass is not required" "未安装 OpenClash，无需绕过" po/zh_Hans/tailscale.po
+assert_po_entry "Unsupported; firewall4/nftables is required" "当前系统不支持，仅支持 firewall4/nftables" po/zh_Hans/tailscale.po
 assert_po_entry "Configuration error" "配置错误" po/zh_Hans/tailscale.po
 assert_po_entry "Unknown status" "未知状态" po/zh_Hans/tailscale.po
 assert_po_entry "Unable to read OpenClash bypass status." "无法读取 OpenClash 绕过状态。" po/zh_Hans/tailscale.po
-assert_po_entry "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service." "绕过 OpenClash，使带有 Tailscale 标记的本机流量和从 tailscale0 进入的流量不经过代理。此功能不会重载 firewall4，也不会管理 OpenClash 服务。" po/zh_Hans/tailscale.po
+assert_po_entry "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash." "开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和内网 DNS 解析不再受本功能保护；OpenClash 规则接管或重定向这些流量时，会出现节点掉线、直连退化为 DERP、跨子网访问或内网 DNS 中断。使用 OpenClash 时必须保持开启。" po/zh_Hans/tailscale.po
 assert_po_entry "OpenClash" "OpenClash" po/zh_Hant/tailscale.po
-assert_po_entry "Enable OpenClash Bypass" "啟用 OpenClash 繞過" po/zh_Hant/tailscale.po
+assert_po_entry "Protect Tailscale Traffic (Bypass OpenClash)" "保護 Tailscale 流量（繞過 OpenClash）" po/zh_Hant/tailscale.po
 assert_po_entry "Status" "狀態" po/zh_Hant/tailscale.po
 assert_po_entry "Checking ..." "檢查中..." po/zh_Hant/tailscale.po
-assert_po_entry "Enabled and active" "已啟用並生效" po/zh_Hant/tailscale.po
-assert_po_entry "Enabled; waiting for OpenClash nftables chains" "已啟用，等待 OpenClash 建立 nftables 鏈" po/zh_Hant/tailscale.po
-assert_po_entry "Disabled" "已停用" po/zh_Hant/tailscale.po
-assert_po_entry "OpenClash is not installed" "未安裝 OpenClash" po/zh_Hant/tailscale.po
-assert_po_entry "Unsupported: firewall4/nftables is required" "不支援：需要 firewall4/nftables" po/zh_Hant/tailscale.po
+assert_po_entry "Enabled; 4 bypass rules are active" "已開啟，4 條繞過規則已生效" po/zh_Hant/tailscale.po
+assert_po_entry "Enabled; waiting for OpenClash nftables chains" "已開啟，正在等待 OpenClash 建立 nftables 鏈" po/zh_Hant/tailscale.po
+assert_po_entry "Disabled; Tailscale traffic is handled by OpenClash" "已關閉，Tailscale 流量將由 OpenClash 處理" po/zh_Hant/tailscale.po
+assert_po_entry "OpenClash is not installed; bypass is not required" "未安裝 OpenClash，無需繞過" po/zh_Hant/tailscale.po
+assert_po_entry "Unsupported; firewall4/nftables is required" "目前系統不支援，僅支援 firewall4/nftables" po/zh_Hant/tailscale.po
 assert_po_entry "Configuration error" "設定錯誤" po/zh_Hant/tailscale.po
 assert_po_entry "Unknown status" "未知狀態" po/zh_Hant/tailscale.po
 assert_po_entry "Unable to read OpenClash bypass status." "無法讀取 OpenClash 繞過狀態。" po/zh_Hant/tailscale.po
-assert_po_entry "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service." "繞過 OpenClash，讓帶有 Tailscale 標記的主機流量及從 tailscale0 進入的流量不經代理。此功能不會重新載入 firewall4，也不會管理 OpenClash 服務。" po/zh_Hant/tailscale.po
+assert_po_entry "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash." "開啟後，Tailscale 控制連線、直連通訊、Tailnet DNS 和跨子網流量不會被 OpenClash 接管。關閉後，這些流量將重新經過 OpenClash，節點在線、點對點直連、跨子網存取和內網 DNS 解析不再受本功能保護；OpenClash 規則接管或重新導向這些流量時，會出現節點離線、直連退化為 DERP、跨子網存取或內網 DNS 中斷。使用 OpenClash 時必須保持開啟。" po/zh_Hant/tailscale.po
 assert_po_entry_mutation_test
 assert_contains 'msgid "Allow WAN Direct"' po/templates/tailscale.pot
 assert_contains 'msgid "WAN Direct Source Zones"' po/templates/tailscale.pot
