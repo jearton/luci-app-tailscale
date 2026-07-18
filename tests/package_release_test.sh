@@ -206,7 +206,7 @@ assert_release_permissions() {
 	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
 }
 
-assert_contains "PKG_VERSION:=1.2.8" Makefile
+assert_contains "PKG_VERSION:=1.2.9" Makefile
 assert_file .github/workflows/release.yml
 assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
@@ -669,6 +669,11 @@ assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/us
 assert_contains '"/usr/sbin/tailscale_peer_probe": [ "exec" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "config_get authkey" root/etc/init.d/tailscale
 assert_contains 'tailscale_secrets migrate' root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'if [ -x /etc/init.d/tailscale-openclash-bypass ]; then' root/etc/uci-defaults/40_luci-tailscale
+assert_contains '/etc/init.d/tailscale-openclash-bypass enable' root/etc/uci-defaults/40_luci-tailscale
+assert_contains '/etc/init.d/tailscale-openclash-bypass start' root/etc/uci-defaults/40_luci-tailscale
+assert_before 'tailscale_secrets migrate' '/etc/init.d/tailscale-openclash-bypass enable' root/etc/uci-defaults/40_luci-tailscale
+assert_before '/etc/init.d/tailscale-openclash-bypass enable' '/etc/init.d/tailscale-openclash-bypass start' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains "option adguard_password" root/etc/config/tailscale
 assert_not_contains "option authkey" root/etc/config/tailscale
 assert_contains "--cleanup-managed-firewall" root/etc/init.d/tailscale
@@ -679,9 +684,11 @@ assert_contains "Package/luci-app-tailscale/prerm" Makefile
 assert_not_contains "Package/luci-app-tailscale/postinst" Makefile
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
+assert_contains '/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true' Makefile
 assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
 assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
 assert_before "/usr/sbin/tailscale_openclash_bypass cleanup" "/etc/init.d/tailscale stop" Makefile
+assert_before "/etc/init.d/tailscale-openclash-bypass disable" "/etc/init.d/tailscale stop" Makefile
 assert_contains "/etc/init.d/tailscale stop" Makefile
 assert_not_contains "/etc/init.d/tailscale stop >/dev/null 2>&1 || true" Makefile
 assert_not_contains "grep -b" root/usr/sbin/tailscale_openclash_bypass
