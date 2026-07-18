@@ -18,6 +18,40 @@ fail() {
 
 mkdir -p "$TMP_DIR"
 
+REAL_JQ="$(command -v jq)"
+export REAL_JQ
+cat >"$TMP_DIR/jq-no-regex" <<'SH'
+#!/bin/sh
+filter=
+skip=0
+for arg do
+	if [ "$skip" -gt 0 ]; then
+		skip=$((skip - 1))
+		continue
+	fi
+	[ -z "$filter" ] || continue
+	case "$arg" in
+	--arg|--argjson|--argfile|--slurpfile|--rawfile) skip=2 ;;
+	-*) ;;
+	*) filter="$arg" ;;
+	esac
+done
+normalized_filter="$(printf '%s' "$filter" | tr '\n\r\t' '   ')"
+if printf '%s\n' "$normalized_filter" |
+	grep -Eq '(^|[^[:alnum:]_])(test|match|sub|gsub)[[:space:]]*\('; then
+	printf '%s\n' 'jq regex functions are unavailable on the target OpenWrt build' >&2
+	exit 3
+fi
+exec "${REAL_JQ:?}" "$@"
+SH
+chmod +x "$TMP_DIR/jq-no-regex"
+export JQ_BIN="$TMP_DIR/jq-no-regex"
+
+if "$TMP_DIR/jq-no-regex" -n '"x" | test
+("x")' >/dev/null 2>&1; then
+	fail "target jq shim must reject regex functions split across whitespace"
+fi
+
 cat >"$TMP_DIR/secrets" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${SECRETS_ARGV_LOG:?}"
@@ -58,11 +92,31 @@ printf 'adguard_process=pass\nhealth_check=pass\nready=pass\n'
 SH
 chmod +x "$TMP_DIR/preflight"
 
+cat >"$TMP_DIR/openclash-helper" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >"${OPENCLASH_HELPER_ARGV_LOG:?}"
+case "${OPENCLASH_HELPER_MODE:-success}" in
+	success)
+		printf '%s\n' '{"state":"active","rules_present":4,"detail":"helper status"}'
+		;;
+	fail)
+		printf '%s\n' 'partial helper output'
+		printf '%s\n' 'helper failed' >&2
+		exit 7
+		;;
+	invalid)
+		printf '%s\n' 'not JSON'
+		;;
+	esac
+SH
+chmod +x "$TMP_DIR/openclash-helper"
+
 PREFLIGHT_ARGV_LOG="$TMP_DIR/argv.log"
 PREFLIGHT_ENV_LOG="$TMP_DIR/env.log"
 SECRETS_ARGV_LOG="$TMP_DIR/secrets-argv.log"
 SECRETS_STDIN_LOG="$TMP_DIR/secrets-stdin.log"
-export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG
+OPENCLASH_HELPER_ARGV_LOG="$TMP_DIR/openclash-helper-argv.log"
+export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG OPENCLASH_HELPER_ARGV_LOG
 : >"$SECRETS_ARGV_LOG"
 : >"$SECRETS_STDIN_LOG"
 
@@ -71,6 +125,29 @@ printf '%s' "$list_json" | jq -e '.adguard_preflight.candidate == "" and .adguar
 	fail "rpcd list output must declare the AdGuard preflight string arguments"
 printf '%s' "$list_json" | jq -e '.secret_status == {} and (has("set_secret") | not) and .set_secrets.authkey_set == "" and .set_secrets.adguard_password_set == "" and .set_secrets.base_ref == ""' >/dev/null || \
 	fail "rpcd list output must declare secret status and write methods"
+printf '%s' "$list_json" | jq -e '.openclash_bypass_status == {}' >/dev/null || \
+	fail "rpcd list output must declare the read-only OpenClash bypass status method"
+
+openclash_status_response="$(printf '%s\n' '{"ignored":"caller-controlled input"}' | OPENCLASH_BYPASS_BIN="$TMP_DIR/openclash-helper" \
+	"$RPCD_SCRIPT" call openclash_bypass_status)"
+printf '%s' "$openclash_status_response" | jq -e '.state == "active" and .rules_present == 4 and .detail == "helper status"' >/dev/null || \
+	fail "rpcd must return the helper status object unchanged"
+[ "$(cat "$OPENCLASH_HELPER_ARGV_LOG")" = "status" ] || \
+	fail "rpcd must invoke the OpenClash helper with the fixed status argument only"
+
+if openclash_failure_response="$(printf '%s\n' '{}' | OPENCLASH_HELPER_MODE=fail OPENCLASH_BYPASS_BIN="$TMP_DIR/openclash-helper" \
+	"$RPCD_SCRIPT" call openclash_bypass_status 2>&1)"; then
+	fail "rpcd must fail when the OpenClash helper exits nonzero"
+fi
+printf '%s' "$openclash_failure_response" | jq -e '.code == 2 and .ready == "fail" and (.error | type == "string")' >/dev/null || \
+	fail "nonzero OpenClash helper exits must return controlled JSON errors"
+
+if openclash_invalid_response="$(printf '%s\n' '{}' | OPENCLASH_HELPER_MODE=invalid OPENCLASH_BYPASS_BIN="$TMP_DIR/openclash-helper" \
+	"$RPCD_SCRIPT" call openclash_bypass_status 2>&1)"; then
+	fail "rpcd must fail when the OpenClash helper returns invalid JSON"
+fi
+printf '%s' "$openclash_invalid_response" | jq -e '.code == 2 and .ready == "fail" and (.error | type == "string")' >/dev/null || \
+	fail "invalid OpenClash helper JSON must return controlled JSON errors"
 
 status_response="$(printf '%s\n' '{}' | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call secret_status)"
 printf '%s' "$status_response" | jq -e '.authkey_set == "1" and .adguard_password_set == "1"' >/dev/null || \
@@ -111,6 +188,17 @@ printf '%s' "$(cat "$SECRETS_STDIN_LOG")" | jq -e '.authkey == "new-auth-key" an
 	fail "batch credential writes must preserve both credentials and the AdGuard endpoint binding"
 printf '%s' "$batch_response" | jq -e '.code == 0 and .ref == "staged-ref"' >/dev/null || \
 	fail "batch credential staging must return the UCI version reference without activating it"
+
+for invalid_ref_request in \
+	'{"authkey_set":"1","authkey":"new-auth-key","adguard_password_set":"0","adguard_password":"","api_url":"","username":"","base_ref":"active-ref\n\n"}' \
+	'{"authkey_set":"1","authkey":"new-auth-key","adguard_password_set":"0","adguard_password":"","api_url":"","username":"","base_ref":"active-ref\u0000"}'
+do
+	: >"$SECRETS_ARGV_LOG"
+	if printf '%s\n' "$invalid_ref_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secrets >/dev/null 2>&1; then
+		fail "credential batch RPC must reject control characters in base_ref"
+	fi
+	[ ! -s "$SECRETS_ARGV_LOG" ] || fail "invalid base_ref must not reach the protected credential helper"
+done
 
 legacy_set_request='{"name":"adguard_password","value":"new-secret","api_url":"http://new.example:3000","username":"new-user"}'
 if printf '%s\n' "$legacy_set_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secret >/dev/null 2>&1; then

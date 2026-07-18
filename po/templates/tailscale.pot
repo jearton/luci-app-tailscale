@@ -586,3 +586,47 @@ msgstr ""
 
 msgid "Offline peers cannot be probed"
 msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:345
+msgid "Enabled and active"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:346
+msgid "Enabled; waiting for OpenClash nftables chains"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:347
+msgid "Disabled"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:348
+msgid "OpenClash is not installed"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:349
+msgid "Unsupported: firewall4/nftables is required"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:350
+msgid "Configuration error"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:352
+msgid "Unknown status"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:363
+msgid "Unable to read OpenClash bypass status."
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:798
+msgid "OpenClash"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:800
+msgid "Enable OpenClash Bypass"
+msgstr ""
+
+#: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:801
+msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."
+msgstr ""

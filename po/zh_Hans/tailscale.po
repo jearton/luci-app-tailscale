@@ -592,3 +592,36 @@ msgstr "未知用户"
 
 msgid "Offline peers cannot be probed"
 msgstr "离线设备不可探测"
+
+msgid "Enabled and active"
+msgstr "已启用并生效"
+
+msgid "Enabled; waiting for OpenClash nftables chains"
+msgstr "已启用，等待 OpenClash 创建 nftables 链"
+
+msgid "Disabled"
+msgstr "已禁用"
+
+msgid "OpenClash is not installed"
+msgstr "未安装 OpenClash"
+
+msgid "Unsupported: firewall4/nftables is required"
+msgstr "不支持：需要 firewall4/nftables"
+
+msgid "Configuration error"
+msgstr "配置错误"
+
+msgid "Unknown status"
+msgstr "未知状态"
+
+msgid "Unable to read OpenClash bypass status."
+msgstr "无法读取 OpenClash 绕过状态。"
+
+msgid "OpenClash"
+msgstr "OpenClash"
+
+msgid "Enable OpenClash Bypass"
+msgstr "启用 OpenClash 绕过"
+
+msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."
+msgstr "绕过 OpenClash，使带有 Tailscale 标记的本机流量和从 tailscale0 进入的流量不经过代理。此功能不会重载 firewall4，也不会管理 OpenClash 服务。"

@@ -60,6 +60,29 @@ apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-cn-*.apk
 # Or optional Traditional Chinese translation
 apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-tw-*.apk
 ```
+--------------
+
+## OpenClash Bypass
+
+- Supports firewall4/nftables only.
+- Enabled by default when the packaged setting is present; it is a no-op when OpenClash is absent.
+- Manages one delimited block in `/etc/openclash/custom/openclash_custom_firewall_rules.sh`.
+- The managed block invokes `/usr/sbin/tailscale_openclash_bypass apply` through OpenClash's official custom firewall hook.
+- Manages exactly four comment-owned rules in OpenClash's nftables chains.
+- Does not modify `/etc/config/firewall`, reload firewall4, or start/restart OpenClash.
+- WAN direct remains a separate feature that manages only its own firewall UCI rules.
+- Status states: `active`, `waiting`, `disabled`, `absent`, `unsupported`, and `error`.
+- Cleanup removes only the managed hook block and the four `luci-app-tailscale:` rules.
+- Package installation uses the standard LuCI/OpenWrt post-install lifecycle; the packaged init script performs one locked `sync`.
+
+Rollback:
+
+```sh
+uci set tailscale_openclash.settings.enabled='0'
+uci commit tailscale_openclash
+/etc/init.d/tailscale-openclash-bypass reload
+/usr/sbin/tailscale_openclash_bypass status
+```
 
 --------------
 

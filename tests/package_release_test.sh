@@ -19,12 +19,95 @@ assert_contains() {
 	grep -F -- "$needle" "$ROOT_DIR/$file" >/dev/null || fail "$file should contain: $needle"
 }
 
+assert_po_entry() {
+	expected_msgid="$1"
+	expected_msgstr="$2"
+	file="$3"
+	case "$file" in
+		/*) po_file="$file" ;;
+		*) po_file="$ROOT_DIR/$file" ;;
+	esac
+
+	awk -v expected_msgid="$expected_msgid" -v expected_msgstr="$expected_msgstr" '
+		function quoted_value(line, value) {
+			value = line
+			sub(/^[^"]*"/, "", value)
+			sub(/"$/, "", value)
+			return value
+		}
+		function finish_entry() {
+			if (has_msgid && has_msgstr && msgid == expected_msgid && msgstr == expected_msgstr)
+				matched = 1
+			msgid = ""
+			msgstr = ""
+			active_field = ""
+			has_msgid = 0
+			has_msgstr = 0
+		}
+		/^[[:space:]]*$/ {
+			finish_entry()
+			next
+		}
+		/^msgid "/ {
+			if (has_msgid || has_msgstr)
+				finish_entry()
+			msgid = quoted_value($0)
+			has_msgid = 1
+			active_field = "msgid"
+			next
+		}
+		/^msgstr "/ {
+			msgstr = quoted_value($0)
+			has_msgstr = 1
+			active_field = "msgstr"
+			next
+		}
+		/^"/ {
+			if (active_field == "msgid")
+				msgid = msgid quoted_value($0)
+			else if (active_field == "msgstr")
+				msgstr = msgstr quoted_value($0)
+			next
+		}
+		{
+			active_field = ""
+		}
+		END {
+			finish_entry()
+			exit !matched
+		}
+	' "$po_file" || fail "$file should contain PO entry: msgid $expected_msgid with msgstr $expected_msgstr"
+}
+
+assert_po_entry_mutation_test() {
+	mutated_po="$(mktemp "$ROOT_DIR/tests/package_release_test.XXXXXX")"
+	trap 'rm -f "$mutated_po"' 0 HUP INT TERM
+	awk '
+		$0 == "msgstr \"已启用并生效\"" { print "msgstr \"已禁用\""; next }
+		$0 == "msgstr \"已禁用\"" { print "msgstr \"已启用并生效\""; next }
+		{ print }
+	' "$ROOT_DIR/po/zh_Hans/tailscale.po" > "$mutated_po"
+
+	if (assert_po_entry "Enabled and active" "已启用并生效" "$mutated_po") >/dev/null 2>&1; then
+		fail "assert_po_entry must reject swapped PO translations"
+	fi
+
+	rm -f "$mutated_po"
+}
+
 assert_not_contains() {
 	needle="$1"
 	file="$2"
 	if grep -F -- "$needle" "$ROOT_DIR/$file" >/dev/null; then
 		fail "$file should not contain: $needle"
 	fi
+}
+
+assert_jq() {
+	filter="$1"
+	file="$2"
+	message="$3"
+	jq -e "$filter" "$ROOT_DIR/$file" >/dev/null || fail "$message"
 }
 
 line_number() {
@@ -123,7 +206,7 @@ assert_release_permissions() {
 	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
 }
 
-assert_contains "PKG_VERSION:=1.2.7" Makefile
+assert_contains "PKG_VERSION:=1.2.8" Makefile
 assert_file .github/workflows/release.yml
 assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
@@ -159,6 +242,9 @@ assert_file root/etc/init.d/tailscale
 assert_file root/usr/sbin/tailscale_helper
 assert_file root/usr/sbin/tailscale_keepalive
 assert_file root/usr/sbin/tailscale_adguard_dns_switch
+assert_file root/usr/sbin/tailscale_openclash_bypass
+assert_file root/etc/config/tailscale_openclash
+assert_file root/etc/init.d/tailscale-openclash-bypass
 assert_file root/usr/sbin/tailscale_peer_probe
 assert_file root/usr/sbin/tailscale_secrets
 assert_file root/lib/upgrade/keep.d/luci-app-tailscale
@@ -182,6 +268,53 @@ assert_contains 'firewall.$section.src=$zone' root/usr/sbin/tailscale_helper
 assert_contains 'firewall.$section.proto=udp' root/usr/sbin/tailscale_helper
 assert_contains 'firewall.$section.dest_port=$port' root/usr/sbin/tailscale_helper
 assert_contains 'firewall.$section.target=ACCEPT' root/usr/sbin/tailscale_helper
+assert_not_contains "tailscale_openclash_bypass" root/usr/sbin/tailscale_helper
+assert_not_contains "openclash_custom_firewall_rules.sh" root/usr/sbin/tailscale_helper
+assert_not_contains "/etc/config/firewall" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "uci commit firewall" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "/etc/init.d/firewall" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "/etc/init.d/openclash reload" root/usr/sbin/tailscale_openclash_bypass
+assert_not_contains "/etc/init.d/openclash restart" root/usr/sbin/tailscale_openclash_bypass
+assert_contains 'msgid "OpenClash"' po/templates/tailscale.pot
+assert_contains 'msgid "Enable OpenClash Bypass"' po/templates/tailscale.pot
+assert_contains 'msgid "Status"' po/templates/tailscale.pot
+assert_contains 'msgid "Checking ..."' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled and active"' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled; waiting for OpenClash nftables chains"' po/templates/tailscale.pot
+assert_contains 'msgid "Disabled"' po/templates/tailscale.pot
+assert_contains 'msgid "OpenClash is not installed"' po/templates/tailscale.pot
+assert_contains 'msgid "Unsupported: firewall4/nftables is required"' po/templates/tailscale.pot
+assert_contains 'msgid "Configuration error"' po/templates/tailscale.pot
+assert_contains 'msgid "Unknown status"' po/templates/tailscale.pot
+assert_contains 'msgid "Unable to read OpenClash bypass status."' po/templates/tailscale.pot
+assert_contains 'msgid "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service."' po/templates/tailscale.pot
+assert_po_entry "OpenClash" "OpenClash" po/zh_Hans/tailscale.po
+assert_po_entry "Enable OpenClash Bypass" "启用 OpenClash 绕过" po/zh_Hans/tailscale.po
+assert_po_entry "Status" "状态" po/zh_Hans/tailscale.po
+assert_po_entry "Checking ..." "检查中..." po/zh_Hans/tailscale.po
+assert_po_entry "Enabled and active" "已启用并生效" po/zh_Hans/tailscale.po
+assert_po_entry "Enabled; waiting for OpenClash nftables chains" "已启用，等待 OpenClash 创建 nftables 链" po/zh_Hans/tailscale.po
+assert_po_entry "Disabled" "已禁用" po/zh_Hans/tailscale.po
+assert_po_entry "OpenClash is not installed" "未安装 OpenClash" po/zh_Hans/tailscale.po
+assert_po_entry "Unsupported: firewall4/nftables is required" "不支持：需要 firewall4/nftables" po/zh_Hans/tailscale.po
+assert_po_entry "Configuration error" "配置错误" po/zh_Hans/tailscale.po
+assert_po_entry "Unknown status" "未知状态" po/zh_Hans/tailscale.po
+assert_po_entry "Unable to read OpenClash bypass status." "无法读取 OpenClash 绕过状态。" po/zh_Hans/tailscale.po
+assert_po_entry "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service." "绕过 OpenClash，使带有 Tailscale 标记的本机流量和从 tailscale0 进入的流量不经过代理。此功能不会重载 firewall4，也不会管理 OpenClash 服务。" po/zh_Hans/tailscale.po
+assert_po_entry "OpenClash" "OpenClash" po/zh_Hant/tailscale.po
+assert_po_entry "Enable OpenClash Bypass" "啟用 OpenClash 繞過" po/zh_Hant/tailscale.po
+assert_po_entry "Status" "狀態" po/zh_Hant/tailscale.po
+assert_po_entry "Checking ..." "檢查中..." po/zh_Hant/tailscale.po
+assert_po_entry "Enabled and active" "已啟用並生效" po/zh_Hant/tailscale.po
+assert_po_entry "Enabled; waiting for OpenClash nftables chains" "已啟用，等待 OpenClash 建立 nftables 鏈" po/zh_Hant/tailscale.po
+assert_po_entry "Disabled" "已停用" po/zh_Hant/tailscale.po
+assert_po_entry "OpenClash is not installed" "未安裝 OpenClash" po/zh_Hant/tailscale.po
+assert_po_entry "Unsupported: firewall4/nftables is required" "不支援：需要 firewall4/nftables" po/zh_Hant/tailscale.po
+assert_po_entry "Configuration error" "設定錯誤" po/zh_Hant/tailscale.po
+assert_po_entry "Unknown status" "未知狀態" po/zh_Hant/tailscale.po
+assert_po_entry "Unable to read OpenClash bypass status." "無法讀取 OpenClash 繞過狀態。" po/zh_Hant/tailscale.po
+assert_po_entry "Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service." "繞過 OpenClash，讓帶有 Tailscale 標記的主機流量及從 tailscale0 進入的流量不經代理。此功能不會重新載入 firewall4，也不會管理 OpenClash 服務。" po/zh_Hant/tailscale.po
+assert_po_entry_mutation_test
 assert_contains 'msgid "Allow WAN Direct"' po/templates/tailscale.pot
 assert_contains 'msgid "WAN Direct Source Zones"' po/templates/tailscale.pot
 assert_contains 'msgid "Allow WAN Direct"' po/zh_Hans/tailscale.po
@@ -343,10 +476,8 @@ assert_before "_adguard_dns_status" "Enable AdGuard DNS Auto Switch" htdocs/luci
 assert_contains "ADGUARD_PREFLIGHT_CHECKS" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "window.setTimeout(refreshAdguardPreflightStatus" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "Checking ..."' po/templates/tailscale.pot
-assert_contains 'msgid "Checking ..."' po/zh_Hans/tailscale.po
-assert_contains 'msgstr "检查中..."' po/zh_Hans/tailscale.po
-assert_contains 'msgid "Checking ..."' po/zh_Hant/tailscale.po
-assert_contains 'msgstr "檢查中..."' po/zh_Hant/tailscale.po
+assert_po_entry "Checking ..." "检查中..." po/zh_Hans/tailscale.po
+assert_po_entry "Checking ..." "檢查中..." po/zh_Hant/tailscale.po
 assert_not_contains "AdGuard DNS auto switch cannot be enabled until every environment status check passes." htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "keepalivePeerAliases" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "shortDnsName" htdocs/luci-static/resources/view/tailscale/setting.js
@@ -522,8 +653,12 @@ assert_contains 'msgid "Leave blank to keep the existing auth key; enter a new v
 assert_contains 'msgstr "留空则保留现有认证密钥；填写新值则覆盖。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Failed to stage protected credentials."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "暂存受保护凭证失败。"' po/zh_Hans/tailscale.po
-assert_contains '"luci.tailscale": [ "secret_status" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secrets" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+acl_file=root/usr/share/rpcd/acl.d/luci-app-tailscale.json
+assert_jq '.["luci-app-tailscale"].read.uci == ["tailscale", "tailscale_openclash"]' "$acl_file" 'ACL read UCI access must be exactly tailscale and tailscale_openclash'
+assert_jq '.["luci-app-tailscale"].write.uci == ["tailscale", "tailscale_openclash"]' "$acl_file" 'ACL write UCI access must be exactly tailscale and tailscale_openclash'
+assert_jq '.["luci-app-tailscale"].read.ubus["luci.tailscale"] == ["secret_status", "openclash_bypass_status"]' "$acl_file" 'ACL read ubus access must be exactly the two read-only Tailscale methods'
+assert_jq '.["luci-app-tailscale"].read.file | has("/usr/sbin/tailscale_openclash_bypass") | not' "$acl_file" 'ACL must not grant file-exec access to the OpenClash helper'
 assert_not_contains '"set_secret"' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
@@ -537,8 +672,19 @@ assert_contains "TAILSCALE_INTERNAL_RELOAD" root/etc/init.d/tailscale
 assert_not_contains "RELOAD_MARKER_FILE" root/etc/init.d/tailscale
 assert_contains 'activate "$secrets_ref"' root/etc/init.d/tailscale
 assert_contains "Package/luci-app-tailscale/prerm" Makefile
+assert_not_contains "Package/luci-app-tailscale/postinst" Makefile
+assert_not_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
+assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
+assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
+assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
+assert_before "/usr/sbin/tailscale_openclash_bypass cleanup" "/etc/init.d/tailscale stop" Makefile
 assert_contains "/etc/init.d/tailscale stop" Makefile
 assert_not_contains "/etc/init.d/tailscale stop >/dev/null 2>&1 || true" Makefile
+assert_not_contains "grep -b" root/usr/sbin/tailscale_openclash_bypass
+assert_contains '"$PROG" sync' root/etc/init.d/tailscale-openclash-bypass
+assert_not_contains "config_get_bool" root/etc/init.d/tailscale-openclash-bypass
+assert_contains 'Status states: `active`, `waiting`, `disabled`, `absent`, `unsupported`, and `error`.' README.md
+assert_contains 'Cleanup removes only the managed hook block and the four `luci-app-tailscale:` rules.' README.md
 
 assert_not_exists root/lib/netifd/proto/tailscale.sh
 assert_not_exists htdocs/luci-static/resources/protocol/tailscale.js

@@ -2,7 +2,7 @@
 
 ## Status
 
-Design approved on 2026-07-16; written specification awaiting user review.
+Design approved on 2026-07-16; final-review corrections approved on 2026-07-17.
 
 ## Background
 
@@ -124,15 +124,19 @@ Install an executable helper at:
 
 The helper exposes these operations:
 
+- `sync`: re-read the app-owned UCI setting and reconcile the complete enabled or
+  disabled state under one exclusive lock;
 - `reconcile-hook`: install or update the managed hook block without changing
-  user content;
+  user content; this remains a focused diagnostic/test operation and is not used
+  by the procd lifecycle;
 - `apply`: reconcile the four runtime nftables rules;
 - `cleanup`: remove only the managed hook block and managed nftables rules;
 - `status`: return a machine-readable operational state for LuCI and tests.
 
-All operations are idempotent. Concurrent invocations use an OpenWrt-compatible
-lock so OpenClash startup and a LuCI apply cannot edit the hook or rules at the
-same time.
+All mutating operations are idempotent and use an OpenWrt-compatible lock. The
+procd service invokes only `sync`, so one UCI decision, hook reconciliation, and
+runtime-rule reconciliation cannot be interleaved with a concurrent enable,
+disable, OpenClash startup, or LuCI apply.
 
 ### Managed OpenClash Hook
 
@@ -156,6 +160,10 @@ Hook reconciliation must:
 
 - preserve all bytes outside the managed block;
 - preserve the file's mode and ownership;
+- identify markers only when an entire line exactly equals the marker, using
+  BusyBox 1.36-compatible tools; `grep -b` is not available on the target;
+- validate the complete managed body and replace a stale managed body with the
+  canonical block;
 - write through a temporary file and atomically replace the original only after
   `sh -n` succeeds;
 - restore the original immediately if validation or replacement fails;
@@ -163,6 +171,10 @@ Hook reconciliation must:
 - create no file when OpenClash is absent;
 - create a minimal executable custom script only when OpenClash is installed but
   the documented hook path is missing.
+
+Temporary hook and nftables files are tracked explicitly and removed by signal
+and exit traps. Replacement restores numeric ownership before restoring mode so
+`chown` cannot clear special mode bits after `chmod`.
 
 The marker comments and nftables rule comments are written in Chinese, with a
 stable `luci-app-tailscale` ownership prefix for reliable cleanup.
@@ -191,6 +203,23 @@ comments. The helper does not remove equivalent rules written by the user or
 another package. Repeated application leaves exactly one owned rule in each
 target chain.
 
+An absent `inet fw4` table or an already removed target chain is a successful
+cleanup no-op. If a chain disappears between a table snapshot and a chain read,
+the helper refreshes table state before classifying the result as waiting,
+unsupported, or an actual error.
+
+## Existing Site-to-Site SNAT Contract
+
+The existing `子网互通` option remains outside the OpenClash flow. It controls
+both Tailscale `--snat-subnet-routes` and the app-owned firewall4 zone's `masq`
+option. Enabling it means `--snat-subnet-routes=false` and
+`firewall.tszone.masq='0'`.
+
+The `tailscale` firewall zone exists whenever either forwarding access rules are
+selected or site-to-site no-SNAT is enabled. Forwarding sections are still
+created only for selected access directions. Therefore no-SNAT remains effective
+when the access list is empty, without creating unrelated forwarding rules.
+
 ## Destination Bypass Responsibility
 
 The helper does not create destination-based rules for Tailnet addresses or
@@ -206,14 +235,18 @@ OpenClash.
 
 ### Package Install or Upgrade
 
-1. Detect firewall4/nftables support.
-2. Detect whether OpenClash is installed.
-3. If unsupported or absent, finish without modifying OpenClash or firewall UCI.
-4. Resolve the effective OpenClash-bypass setting.
-5. When enabled, reconcile the managed hook.
-6. If all four OpenClash chains currently exist, apply the rules immediately.
-7. If the chains do not exist, report `waiting`; do not start or restart
-   OpenClash. Its next successful startup will execute the hook.
+1. Use the standard LuCI package post-install path so cache invalidation and
+   `rpcd` reload remain intact; do not add a package-specific start/enable hook.
+2. OpenWrt's `default_postinst` starts/enables the packaged init script.
+3. The one-shot init script invokes `sync`, which re-reads UCI under one lock.
+4. If OpenClash is absent, finish without creating a hook or changing rules.
+5. If firewall4/nftables is unsupported, report `unsupported` and make no hook or
+   rule change.
+6. When enabled and firewall4 exists, reconcile the managed hook. If all four
+   OpenClash chains exist, reconcile the rules in one nft transaction.
+7. If the chains do not exist, retain the canonical hook and report `waiting`;
+   do not start or restart OpenClash. Its next successful startup executes the
+   hook.
 
 ### OpenClash Start or Restart
 
@@ -251,6 +284,9 @@ absent chains, or an already removed hook is a successful no-op.
   OpenClash.
 - LuCI displays the helper result without reporting success when hook or rule
   reconciliation failed.
+- UCI booleans use OpenWrt semantics: `0`, `false`, `off`, `no`, and `disabled`
+  are false; known true aliases are true; malformed values do not silently enable
+  the feature.
 
 OpenClash may fail to rebuild its own chains after a firewall4 reload. That is an
 independent OpenClash lifecycle problem. This feature reports missing chains and
