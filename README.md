@@ -60,7 +60,6 @@ apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-cn-*.apk
 # Or optional Traditional Chinese translation
 apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-tw-*.apk
 ```
-
 --------------
 
 ## OpenClash Bypass
