@@ -116,6 +116,28 @@ assert(selfPeer.routes.join(',') === '192.168.100.0/24', 'Self should preserve i
 const normalizedGroups = buildPeerGroups(normalizedPeers);
 assert(normalizedGroups.map(item => item.name).join(',') === 'Alpha User,Unknown user,Zeta User', 'peer groups should sort by normalized user display name');
 assert(normalizedGroups[0].peers[0].id === 'node:gateway', 'peer grouping should retain the normalized user association');
+const alphaGroup = normalizedGroups.find(item => item.key === '2');
+assert(alphaGroup && alphaGroup.peers.length === 2, 'Self and regular peers with the same UserID should share one user group');
+assert(alphaGroup.peers.some(item => item.isSelf) && alphaGroup.peers.some(item => item.id === 'node:gateway'), 'shared user group should contain both Self and the regular peer');
+const normalizedPage = paginatePeerGroups(normalizedGroups, 1, 1);
+assert(normalizedPage.total === normalizedPeers.length, 'Self should be included in the paginated peer count');
+assert(normalizedPage.groups.length === 1 && normalizedPage.groups[0].peers[0].isSelf, 'Self should participate in pagination as a peer entry');
+
+const peerOnlyPeers = parseStatus(JSON.stringify({
+	User: {
+		'3': { DisplayName: 'Peer Only User' }
+	},
+	Peer: {
+		'node:peer-only': {
+			HostName: 'peer-only-host',
+			TailscaleIPs: ['100.64.0.50'],
+			UserID: 3,
+			Online: true
+		}
+	}
+}));
+assert(peerOnlyPeers.length === 1 && peerOnlyPeers[0].id === 'node:peer-only', 'status without Self should preserve the peer-only list');
+assert(!peerOnlyPeers[0].isSelf && peerOnlyPeers[0].userName === 'Peer Only User', 'peer-only status should remain compatible with existing user normalization');
 
 const largeUserId = '9007199254740993';
 const largeIdPeers = parseStatus(`{"User":{"${largeUserId}":{"DisplayName":"Large ID User"}},"Peer":{"node:large":{"HostName":"large-id-peer","TailscaleIPs":["100.64.0.99"],"UserID":${largeUserId},"Online":true}}}`);
