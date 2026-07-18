@@ -614,7 +614,7 @@ EOF
 append_managed_rules() {
 	specs="$(rule_specs)"
 	while IFS='|' read -r chain comment match; do
-		printf 'insert rule inet fw4 %s %s counter comment "%s" return\n' \
+		printf 'insert rule inet fw4 %s %s counter return comment "%s"\n' \
 			"$chain" "$match" "$comment" || return 1
 	done <<EOF
 $specs

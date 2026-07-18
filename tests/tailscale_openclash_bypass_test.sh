@@ -193,14 +193,14 @@ print_rule_json() {
 	rule="$2"
 	rest="${rule#insert rule inet fw4 }"
 	rule_chain="${rest%% *}"
-	comment="$(printf '%s\n' "$rule" | sed -n 's/.*comment "\(.*\)" return$/\1/p')"
+	comment="$(printf '%s\n' "$rule" | sed -n 's/.* return comment "\(.*\)"$/\1/p')"
 	[ -n "$comment" ] || return 0
 	json_chain="$rule_chain"
 	case "$rule" in
-		*' meta mark & 0x00ff0000 == 0x00080000 counter comment '*)
+		*' meta mark & 0x00ff0000 == 0x00080000 counter return comment '*)
 			match_json='{"match":{"op":"==","left":{"&":[{"meta":{"key":"mark"}},16711680]},"right":524288}}'
 			;;
-		*' iifname "tailscale0" counter comment '*)
+		*' iifname "tailscale0" counter return comment '*)
 			match_json='{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"tailscale0"}}'
 			;;
 		*)
@@ -319,7 +319,7 @@ replace_table_generation() {
 				rest="${statement#delete rule inet fw4 }"
 				chain="${rest%% handle *}"
 				handle="${rest##* handle }"
-				printf '%s|insert rule inet fw4 %s counter comment "unrelated-generation-rule-%s" return\n' \
+				printf '%s|insert rule inet fw4 %s counter return comment "unrelated-generation-rule-%s"\n' \
 					"$handle" "$chain" "$handle" >>"$replacement"
 				;;
 		esac
@@ -753,13 +753,13 @@ guard_name="$(sed -n 's/^add counter inet fw4 //p' "$NFT_CALL_LOG")"
 guard_add_line="$(grep -nFx "add counter inet fw4 $guard_name" "$NFT_CALL_LOG" | cut -d: -f1)"
 first_chain_line="$(grep -nF -- '-j -a list chain inet fw4 ' "$NFT_CALL_LOG" | head -n 1 | cut -d: -f1)"
 [ "$guard_add_line" -lt "$first_chain_line" ] || fail 'apply cached rule handles before creating its table-generation guard'
-grep -F 'comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）" return' "$NFT_BATCH_LOG" >/dev/null || \
+grep -F 'counter return comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）"' "$NFT_BATCH_LOG" >/dev/null || \
 	fail 'mangle output rule comment is not exact'
-grep -F 'comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（output）" return' "$NFT_BATCH_LOG" >/dev/null || \
+grep -F 'counter return comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（output）"' "$NFT_BATCH_LOG" >/dev/null || \
 	fail 'output rule comment is not exact'
-grep -F 'comment "luci-app-tailscale: tailscale0 入站流量绕过 OpenClash（mangle）" return' "$NFT_BATCH_LOG" >/dev/null || \
+grep -F 'counter return comment "luci-app-tailscale: tailscale0 入站流量绕过 OpenClash（mangle）"' "$NFT_BATCH_LOG" >/dev/null || \
 	fail 'mangle ingress rule comment is not exact'
-grep -F 'comment "luci-app-tailscale: tailscale0 入站流量绕过 OpenClash（filter）" return' "$NFT_BATCH_LOG" >/dev/null || \
+grep -F 'counter return comment "luci-app-tailscale: tailscale0 入站流量绕过 OpenClash（filter）"' "$NFT_BATCH_LOG" >/dev/null || \
 	fail 'filter ingress rule comment is not exact'
 
 run_helper apply
@@ -798,13 +798,13 @@ NFT_COUNTER_PACKETS=0
 NFT_COUNTER_BYTES=0
 
 cp "$NFT_STATE" "$TMP_DIR/nft-before-duplicate-status"
-printf '%s\n' '901|insert rule inet fw4 openclash_mangle_output meta mark & 0x00ff0000 == 0x00080000 counter comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）" return' >>"$NFT_STATE"
+printf '%s\n' '901|insert rule inet fw4 openclash_mangle_output meta mark & 0x00ff0000 == 0x00080000 counter return comment "luci-app-tailscale: Tailscale 标记流量绕过 OpenClash（mangle output）"' >>"$NFT_STATE"
 printf '%s' "$(run_helper status)" | jq -e '.state == "error" and .rules_present == 5' >/dev/null || \
 	fail 'status accepted a duplicated canonical owned rule'
 mv "$TMP_DIR/nft-before-duplicate-status" "$NFT_STATE"
 
 cp "$NFT_STATE" "$TMP_DIR/nft-before-unexpected-status"
-printf '%s\n' '902|insert rule inet fw4 openclash iifname "tailscale0" counter comment "luci-app-tailscale: unexpected owned rule" return' >>"$NFT_STATE"
+printf '%s\n' '902|insert rule inet fw4 openclash iifname "tailscale0" counter return comment "luci-app-tailscale: unexpected owned rule"' >>"$NFT_STATE"
 printf '%s' "$(run_helper status)" | jq -e '.state == "error" and .rules_present == 5' >/dev/null || \
 	fail 'status ignored an unexpected package-owned rule'
 mv "$TMP_DIR/nft-before-unexpected-status" "$NFT_STATE"
@@ -1149,7 +1149,7 @@ printf '%s' "$(FEATURE_ENABLED=0 run_helper status)" | jq -e '
 ' >/dev/null || fail 'successful cleanup retry did not report a residue-free disabled state'
 
 FEATURE_ENABLED=1 run_helper sync
-printf '%s\n' '900|insert rule inet fw4 openclash iifname "tailscale0" counter comment "user-owned-rule" return' >>"$NFT_STATE"
+printf '%s\n' '900|insert rule inet fw4 openclash iifname "tailscale0" counter return comment "user-owned-rule"' >>"$NFT_STATE"
 run_helper cleanup
 grep -F 'luci-app-tailscale:' "$NFT_STATE" >/dev/null && fail 'cleanup left owned nft rules'
 grep -F 'user-owned-rule' "$NFT_STATE" >/dev/null || fail 'cleanup removed a user-owned rule'
