@@ -18,6 +18,40 @@ fail() {
 
 mkdir -p "$TMP_DIR"
 
+REAL_JQ="$(command -v jq)"
+export REAL_JQ
+cat >"$TMP_DIR/jq-no-regex" <<'SH'
+#!/bin/sh
+filter=
+skip=0
+for arg do
+	if [ "$skip" -gt 0 ]; then
+		skip=$((skip - 1))
+		continue
+	fi
+	[ -z "$filter" ] || continue
+	case "$arg" in
+	--arg|--argjson|--argfile|--slurpfile|--rawfile) skip=2 ;;
+	-*) ;;
+	*) filter="$arg" ;;
+	esac
+done
+normalized_filter="$(printf '%s' "$filter" | tr '\n\r\t' '   ')"
+if printf '%s\n' "$normalized_filter" |
+	grep -Eq '(^|[^[:alnum:]_])(test|match|sub|gsub)[[:space:]]*\('; then
+	printf '%s\n' 'jq regex functions are unavailable on the target OpenWrt build' >&2
+	exit 3
+fi
+exec "${REAL_JQ:?}" "$@"
+SH
+chmod +x "$TMP_DIR/jq-no-regex"
+export JQ_BIN="$TMP_DIR/jq-no-regex"
+
+if "$TMP_DIR/jq-no-regex" -n '"x" | test
+("x")' >/dev/null 2>&1; then
+	fail "target jq shim must reject regex functions split across whitespace"
+fi
+
 cat >"$TMP_DIR/secrets" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${SECRETS_ARGV_LOG:?}"
@@ -154,6 +188,17 @@ printf '%s' "$(cat "$SECRETS_STDIN_LOG")" | jq -e '.authkey == "new-auth-key" an
 	fail "batch credential writes must preserve both credentials and the AdGuard endpoint binding"
 printf '%s' "$batch_response" | jq -e '.code == 0 and .ref == "staged-ref"' >/dev/null || \
 	fail "batch credential staging must return the UCI version reference without activating it"
+
+for invalid_ref_request in \
+	'{"authkey_set":"1","authkey":"new-auth-key","adguard_password_set":"0","adguard_password":"","api_url":"","username":"","base_ref":"active-ref\n\n"}' \
+	'{"authkey_set":"1","authkey":"new-auth-key","adguard_password_set":"0","adguard_password":"","api_url":"","username":"","base_ref":"active-ref\u0000"}'
+do
+	: >"$SECRETS_ARGV_LOG"
+	if printf '%s\n' "$invalid_ref_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secrets >/dev/null 2>&1; then
+		fail "credential batch RPC must reject control characters in base_ref"
+	fi
+	[ ! -s "$SECRETS_ARGV_LOG" ] || fail "invalid base_ref must not reach the protected credential helper"
+done
 
 legacy_set_request='{"name":"adguard_password","value":"new-secret","api_url":"http://new.example:3000","username":"new-user"}'
 if printf '%s\n' "$legacy_set_request" | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call set_secret >/dev/null 2>&1; then

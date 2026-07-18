@@ -128,6 +128,14 @@ run_openclash_bypass_status() {
 run_set_secrets() {
 	request="$(cat)"
 	printf '%s' "$request" | "$JQ_BIN" -e '
+		def valid_ref_or_empty:
+			type == "string" and
+			all(explode[];
+				(. >= 48 and . <= 57) or
+				(. >= 65 and . <= 90) or
+				(. >= 97 and . <= 122) or
+				. == 45 or . == 46 or . == 95
+			);
 		type == "object" and
 		(.authkey_set | type == "string" and (. == "0" or . == "1")) and
 		(.authkey | type == "string") and
@@ -135,16 +143,26 @@ run_set_secrets() {
 		(.adguard_password | type == "string") and
 		(.api_url | type == "string") and
 		(.username | type == "string") and
-		(.base_ref | type == "string" and test("^[A-Za-z0-9_.-]*$")) and
+		(.base_ref | valid_ref_or_empty) and
 		(if .authkey_set == "1" then (.authkey | length > 0) else true end) and
 		(if .adguard_password_set == "1" then
-			(.adguard_password | length > 0) and (.api_url | test("^https?://.+"))
+			(.adguard_password | length > 0)
 		 else true end)
 	' >/dev/null 2>&1 || fail_json "invalid credential batch request"
 
 	authkey_set="$(printf '%s' "$request" | "$JQ_BIN" -r '.authkey_set')"
 	adguard_password_set="$(printf '%s' "$request" | "$JQ_BIN" -r '.adguard_password_set')"
 	base_ref="$(printf '%s' "$request" | "$JQ_BIN" -r '.base_ref')"
+	case "$base_ref" in
+	*[!A-Za-z0-9_.-]*) fail_json "invalid credential batch request" ;;
+	esac
+	if [ "$adguard_password_set" = "1" ]; then
+		api_url="$(printf '%s' "$request" | "$JQ_BIN" -r '.api_url')"
+		case "$api_url" in
+		http://?*|https://?*) ;;
+		*) fail_json "invalid credential batch request" ;;
+		esac
+	fi
 	if [ "$authkey_set" = "0" ] && [ "$adguard_password_set" = "0" ]; then
 		"$JQ_BIN" -nc --arg ref "$base_ref" '{code:0,ref:$ref}'
 		return 0

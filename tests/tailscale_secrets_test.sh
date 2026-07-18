@@ -36,6 +36,38 @@ mkdir -p "$TMP_DIR"
 : >"$UCI_LOG"
 export UCI_LOG UCI_REF_FILE
 
+REAL_JQ="$(command -v jq)"
+export REAL_JQ
+cat >"$TMP_DIR/jq-no-regex" <<'SH'
+#!/bin/sh
+filter=
+skip=0
+for arg do
+	if [ "$skip" -gt 0 ]; then
+		skip=$((skip - 1))
+		continue
+	fi
+	[ -z "$filter" ] || continue
+	case "$arg" in
+	--arg|--argjson|--argfile|--slurpfile|--rawfile) skip=2 ;;
+	-*) ;;
+	*) filter="$arg" ;;
+	esac
+done
+normalized_filter="$(printf '%s' "$filter" | tr '\n\r\t' '   ')"
+if printf '%s\n' "$normalized_filter" |
+	grep -Eq '(^|[^[:alnum:]_])(test|match|sub|gsub)[[:space:]]*\('; then
+	printf '%s\n' 'jq regex functions are unavailable on the target OpenWrt build' >&2
+	exit 3
+fi
+exec "${REAL_JQ:?}" "$@"
+SH
+chmod +x "$TMP_DIR/jq-no-regex"
+
+if "$TMP_DIR/jq-no-regex" -n '"x" | test ("x")' >/dev/null 2>&1; then
+	fail "target jq shim must reject regex functions separated from their opening parenthesis by whitespace"
+fi
+
 cat >"$TMP_DIR/uci" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${UCI_LOG:?}"
@@ -66,10 +98,18 @@ fi
 run_secrets() {
 	TAILSCALE_SECRETS_FILE="$SECRET_FILE" \
 	UCI_CMD="$TMP_DIR/uci" \
-	JQ_CMD="$(command -v jq)" \
+	JQ_CMD="$TMP_DIR/jq-no-regex" \
 	FLOCK_BIN="$FLOCK_CMD" \
 	"$SCRIPT" "$@"
 }
+
+for encoded_ref in '"base\n\n"' '"base\u0000"'; do
+	jq -nc --argjson ref "$encoded_ref" '{schema:2,active_ref:$ref,versions:{($ref):{}}}' >"$SECRET_FILE"
+	if run_secrets active-ref >/dev/null 2>&1; then
+		fail "protected credential store must reject control characters in active_ref"
+	fi
+	rm -f "$SECRET_FILE"
+done
 
 authkey='tskey-auth-special-$HOME-$(not-expanded)-"quoted"-\backslash'
 printf '%s' "$authkey" | run_secrets set-authkey
