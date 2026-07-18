@@ -92,7 +92,18 @@ Temporary test paths in two failure messages are normalized as `<tmp>`; all othe
 - GREEN command: `sh -n root/usr/sbin/tailscale_openclash_bypass && sh -n tests/tailscale_openclash_bypass_test.sh && sh tests/tailscale_openclash_bypass_test.sh`
 - GREEN result: exit 0, `tailscale OpenClash bypass tests passed`
 
-The complete 11-file shell suite and 4-file JavaScript suite also passed after each correction GREEN.
+### Office preflight: OpenWrt applet compatibility
+
+- A read-only preflight on the office OpenWrt 24.10.5 image confirmed that neither `stat` nor `od` is installed or provided as a BusyBox applet.
+- RED command: `sh tests/tailscale_openclash_bypass_test.sh`
+- RED result: exit 1 after fake target-image `stat` and `od` commands returned 127.
+- Replaced hook metadata reads with POSIX `ls -ldn | awk` parsing. The parser preserves owner/group, ordinary mode bits, and setuid/setgid/sticky bits.
+- Replaced single-byte hexadecimal inspection with `dd | grep` newline detection, using commands present on the target image.
+- Added regression coverage that hides `stat` and `od` from the helper and verifies numeric restoration of mode `6750` after atomic replacement.
+- GREEN command: `sh tests/tailscale_openclash_bypass_test.sh`
+- GREEN result: exit 0, `tailscale OpenClash bypass tests passed`
+
+The complete 11-file shell suite and 4-file JavaScript suite also passed after the compatibility correction GREEN.
 
 ## Final verification
 
@@ -119,7 +130,7 @@ done
 printf 'shell test files passed: %s\n' "$count"
 ```
 
-Latest result after both review waves: `shell test files passed: 11`.
+Latest result after the target-image compatibility correction: `shell test files passed: 11`.
 
 Complete JavaScript suite:
 
@@ -133,7 +144,7 @@ done
 printf 'JavaScript test files passed: %s\n' "$count"
 ```
 
-Latest result after both review waves: `JavaScript test files passed: 4`.
+Latest result after the target-image compatibility correction: `JavaScript test files passed: 4`.
 
 Static gates:
 
@@ -156,7 +167,7 @@ rg -n 'tailscale_openclash_bypass|openclash_custom_firewall_rules' root/usr/sbin
 rg -n '/etc/init.d/openclash (start|stop|restart|reload|enable|disable)' root/usr/sbin/tailscale_openclash_bypass root/etc/init.d/tailscale-openclash-bypass
 ```
 
-No Docker, MkDocs, router write, service reload/restart, GitHub, or production mutation command was used. One read-only SSH command queried the office OpenWrt's nftables chain JSON for compatibility evidence; `hzsls-openwrt` was not accessed.
+No Docker, MkDocs, router write, service reload/restart, GitHub, or production mutation command was used. Read-only SSH checks queried the office OpenWrt's nftables JSON and available applets for compatibility evidence; `hzsls-openwrt` was not accessed.
 
 ## Files changed
 
@@ -183,6 +194,6 @@ The pre-existing modifications to task-1 through task-4 reports were preserved b
 
 ## Remaining concerns
 
-Office deployment and device-level behavior verification remain intentionally pending a separate, exact backup/change/verification/rollback plan and a fresh explicit `ok`.
+Office deployment and device-level behavior verification remain pending execution of the approved backup/change/verification/rollback plan. No deployment write has started yet.
 
 The final independent re-review of commit `94eb302` reported: `未发现可操作问题，READY`.

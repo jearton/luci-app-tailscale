@@ -100,15 +100,48 @@ canonical_hook_state() {
 }
 
 file_mode() {
-	stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
+	LC_ALL=C ls -ldn "$1" 2>/dev/null | awk '
+		NR == 1 {
+			permissions = substr($1, 2, 9)
+			if (permissions !~ /^[r-][w-][xSs-][r-][w-][xSs-][r-][w-][xTt-]$/)
+				exit 1
+
+			user = (substr(permissions, 1, 1) == "r" ? 4 : 0) + \
+				(substr(permissions, 2, 1) == "w" ? 2 : 0) + \
+				(substr(permissions, 3, 1) ~ /[xs]/ ? 1 : 0)
+			group = (substr(permissions, 4, 1) == "r" ? 4 : 0) + \
+				(substr(permissions, 5, 1) == "w" ? 2 : 0) + \
+				(substr(permissions, 6, 1) ~ /[xs]/ ? 1 : 0)
+			other = (substr(permissions, 7, 1) == "r" ? 4 : 0) + \
+				(substr(permissions, 8, 1) == "w" ? 2 : 0) + \
+				(substr(permissions, 9, 1) ~ /[xt]/ ? 1 : 0)
+			special = (substr(permissions, 3, 1) ~ /[sS]/ ? 4 : 0) + \
+				(substr(permissions, 6, 1) ~ /[sS]/ ? 2 : 0) + \
+				(substr(permissions, 9, 1) ~ /[tT]/ ? 1 : 0)
+
+			found = 1
+			printf "%d%d%d%d\n", special, user, group, other
+			exit
+		}
+		END { if (!found) exit 1 }
+	'
 }
 
 file_owner() {
-	stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1"
+	LC_ALL=C ls -ldn "$1" 2>/dev/null | awk '
+		NR == 1 {
+			if ($3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/)
+				exit 1
+			found = 1
+			printf "%s:%s\n", $3, $4
+			exit
+		}
+		END { if (!found) exit 1 }
+	'
 }
 
-byte_at() {
-	dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | od -An -tx1 | tr -d '[:space:]'
+byte_is_newline() {
+	dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | grep -q '^$'
 }
 
 shebang_size() {
@@ -120,7 +153,7 @@ shebang_size() {
 
 	size="$(head -n 1 "$1" | wc -c | tr -d '[:space:]')"
 	[ "$size" -gt 0 ] || return 1
-	[ "$(byte_at "$1" $((size - 1)))" = 0a ] || return 1
+	byte_is_newline "$1" $((size - 1)) || return 1
 	printf '%s\n' "$size"
 }
 
@@ -186,7 +219,7 @@ reconcile_hook() {
 			end_offset="${rest#*|}"
 			end_length="$(printf '%s' "$END_MARKER" | wc -c | tr -d '[:space:]')"
 			suffix_offset=$((end_offset + end_length))
-			[ "$(byte_at "$OPENCLASH_HOOK_FILE" "$suffix_offset")" = 0a ] && \
+			byte_is_newline "$OPENCLASH_HOOK_FILE" "$suffix_offset" && \
 				suffix_offset=$((suffix_offset + 1))
 			;;
 		*) return 1 ;;
@@ -225,7 +258,7 @@ cleanup_hook() {
 	end_offset="${rest#*|}"
 	end_length="$(printf '%s' "$END_MARKER" | wc -c | tr -d '[:space:]')"
 	suffix_offset=$((end_offset + end_length))
-	[ "$(byte_at "$OPENCLASH_HOOK_FILE" "$suffix_offset")" = 0a ] && \
+	byte_is_newline "$OPENCLASH_HOOK_FILE" "$suffix_offset" && \
 		suffix_offset=$((suffix_offset + 1))
 
 	mode="$(file_mode "$OPENCLASH_HOOK_FILE")" || return 1

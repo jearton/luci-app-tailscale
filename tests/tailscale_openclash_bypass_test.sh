@@ -25,6 +25,9 @@ file_mode() {
 file_owner() {
 	stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1"
 }
+file_permissions() {
+	LC_ALL=C ls -ld "$1" | awk '{ print substr($1, 1, 10) }'
+}
 assert_count() {
 	expected="$1"; needle="$2"; file="$3"
 	actual="$(grep -cF -- "$needle" "$file" || true)"
@@ -79,6 +82,18 @@ done
 exec "${REAL_GREP:?}" "$@"
 SH
 chmod +x "$TMP_DIR/bin/grep"
+cat >"$TMP_DIR/bin/stat" <<'SH'
+#!/bin/sh
+printf 'stat is unavailable on the target OpenWrt image\n' >&2
+exit 127
+SH
+chmod +x "$TMP_DIR/bin/stat"
+cat >"$TMP_DIR/bin/od" <<'SH'
+#!/bin/sh
+printf 'od is unavailable on the target OpenWrt image\n' >&2
+exit 127
+SH
+chmod +x "$TMP_DIR/bin/od"
 cat >"$TMP_DIR/bin/chown" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >>"${CHOWN_LOG:?}"
@@ -489,7 +504,7 @@ printf user-before
 printf '%s\n' 'user text mentions # BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash without owning it'
 printf user-after
 EOF
-chmod 750 "$HOOK"
+chmod 6750 "$HOOK"
 original_owner="$(file_owner "$HOOK")"
 original_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
 CHOWN_LOG="$TMP_DIR/chown.log"
@@ -545,6 +560,7 @@ run_helper() {
 failed_reconcile_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
 failed_reconcile_mode="$(file_mode "$HOOK")"
 failed_reconcile_owner="$(file_owner "$HOOK")"
+failed_reconcile_permissions="$(file_permissions "$HOOK")"
 : >"$DD_LOG"
 if DD_FAIL_PREFIX=1 run_helper reconcile-hook; then
 	fail 'reconcile-hook must fail when prefix copy fails'
@@ -557,13 +573,18 @@ grep -F 'failed:' "$DD_LOG" >/dev/null || fail 'reconcile-hook did not execute t
 	fail 'reconcile-hook changed hook mode after prefix copy failure'
 [ "$(file_owner "$HOOK")" = "$failed_reconcile_owner" ] || \
 	fail 'reconcile-hook changed hook ownership after prefix copy failure'
+[ "$(file_permissions "$HOOK")" = "$failed_reconcile_permissions" ] || \
+	fail 'reconcile-hook changed special permission bits after prefix copy failure'
 
 run_helper reconcile-hook
 assert_line_count 1 '# BEGIN luci-app-tailscale 托管：Tailscale 绕过 OpenClash' "$HOOK"
 assert_line_count 1 '# END luci-app-tailscale 托管：Tailscale 绕过 OpenClash' "$HOOK"
 grep -F 'printf user-before' "$HOOK" >/dev/null || fail 'hook insertion removed user content before the block'
 grep -F 'printf user-after' "$HOOK" >/dev/null || fail 'hook insertion removed user content after the block'
-[ "$(file_mode "$HOOK")" = 750 ] || fail 'hook mode changed'
+[ "$(file_permissions "$HOOK")" = '-rwsr-s---' ] || \
+	fail 'hook mode changed, including special permission bits'
+grep -F 'chmod 6750 ' "$REPLACEMENT_LOG" >/dev/null || \
+	fail 'replacement did not restore special permission bits numerically'
 [ "$(file_owner "$HOOK")" = "$original_owner" ] || fail 'hook ownership changed'
 
 first_hash="$(sha256sum "$HOOK" | awk '{print $1}')"
