@@ -624,4 +624,4 @@ msgid "Protect Tailscale Traffic (Bypass OpenClash)"
 msgstr "保护 Tailscale 流量（绕过 OpenClash）"
 
 msgid "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash."
-msgstr "开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和内网 DNS 解析不再受本功能保护；OpenClash 规则接管或重定向这些流量时，会出现节点掉线、直连退化为 DERP、跨子网访问或内网 DNS 中断。使用 OpenClash 时必须保持开启。"
+msgstr "开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和 Tailnet DNS 解析不再受本功能保护；如果 OpenClash 规则接管或重定向这些流量，可能导致节点掉线、直连退化为 DERP、跨子网访问或 Tailnet DNS 中断。使用 OpenClash 时必须保持开启。"

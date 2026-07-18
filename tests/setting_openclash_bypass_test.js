@@ -17,13 +17,14 @@ assert(source.includes("_('Keep Tailscale control connections, direct connection
 assert(source.includes("_('Enabled; 4 bypass rules are active')"), 'active status must report the concrete rule state');
 assert(source.includes("_('Disabled; Tailscale traffic is handled by OpenClash')"), 'disabled status must state the traffic impact');
 assert(!source.includes("_('Enable OpenClash Bypass')"), 'old implementation-only toggle copy must be removed');
+assert(!source.includes("_('Bypass OpenClash for Tailscale marked host traffic and traffic entering from tailscale0. This feature does not reload firewall4 or manage the OpenClash service.')"), 'old implementation-only description must be removed');
 
 const loadMatch = source.match(/load\(\)\s*\{([\s\S]*?)\n\t\},\n\n\trender/);
 assert(loadMatch, 'expected setting view to define a load() method');
 assert(!loadMatch[1].includes('callOpenclashBypassStatus('), 'OpenClash status must not block initial page rendering');
 assert(source.includes('refreshOpenclashBypassStatus'), 'status must refresh after render');
 
-function createRuntime() {
+function createRuntime(openclashState = 'active') {
 	const rpcDeclarations = [];
 	const rpcCalls = [];
 	const uciLoads = [];
@@ -94,10 +95,12 @@ function createRuntime() {
 		this.tabs.push(tab);
 	};
 
-	Section.prototype.taboption = function(tab, Type, option) {
+	Section.prototype.taboption = function(tab, Type, option, title, description) {
 		const value = new Type(option);
 		value.map = this.map;
 		value.tab = tab;
+		value.title = title;
+		value.description = description;
 		this.options.push(value);
 		return value;
 	};
@@ -203,7 +206,7 @@ function createRuntime() {
 					if (spec.method === 'secret_status')
 						return { authkey_set: '0', adguard_password_set: '0' };
 					if (spec.method === 'openclash_bypass_status')
-						return { state: 'active' };
+						return { state: openclashState };
 					return {};
 				};
 			}
@@ -281,7 +284,31 @@ function scheduledOpenclashRefresh(runtime) {
 	const map = runtime.maps.find(candidate => candidate.config === 'tailscale');
 	const openclashOption = map.options().find(option => option.tab === 'openclash' && option.option === 'openclash_bypass_enabled');
 	assert(openclashOption, 'render() must create the OpenClash bypass toggle in its own tab');
+	assert(openclashOption.title === 'Protect Tailscale Traffic (Bypass OpenClash)', 'toggle must render the protection-focused title');
+	assert(
+		openclashOption.description === 'Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash.',
+		'toggle must render the complete disabled-impact description'
+	);
 	assert(openclashOption.cfgvalue() === '1', 'toggle must read the isolated enabled value');
+
+	const expectedStatuses = {
+		active: 'Enabled; 4 bypass rules are active',
+		waiting: 'Enabled; waiting for OpenClash nftables chains',
+		disabled: 'Disabled; Tailscale traffic is handled by OpenClash',
+		absent: 'OpenClash is not installed; bypass is not required',
+		unsupported: 'Unsupported; firewall4/nftables is required',
+		error: 'Configuration error'
+	};
+	for (const [state, expected] of Object.entries(expectedStatuses)) {
+		const statusRuntime = createRuntime(state);
+		const statusData = await statusRuntime.viewObject.load();
+		await statusRuntime.viewObject.render(statusData);
+		const refresh = scheduledOpenclashRefresh(statusRuntime);
+		const node = statusRuntime.currentStatusNode();
+		assert(refresh && node, `status ${state} must schedule a rendered refresh`);
+		await refresh.callback();
+		assert(node.textContent === expected, `status ${state} must render as: ${expected}`);
+	}
 
 	runtime.scheduled.length = 0;
 	map.formValues.openclash_bypass_enabled = '0';

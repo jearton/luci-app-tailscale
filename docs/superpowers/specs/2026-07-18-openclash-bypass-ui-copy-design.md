@@ -20,7 +20,7 @@
 
 简体中文说明：
 
-> 开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和内网 DNS 解析不再受本功能保护；OpenClash 规则接管或重定向这些流量时，会出现节点掉线、直连退化为 DERP、跨子网访问或内网 DNS 中断。使用 OpenClash 时必须保持开启。
+> 开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和 Tailnet DNS 解析不再受本功能保护；如果 OpenClash 规则接管或重定向这些流量，可能导致节点掉线、直连退化为 DERP、跨子网访问或 Tailnet DNS 中断。使用 OpenClash 时必须保持开启。
 
 繁体中文说明使用相同语义。
 

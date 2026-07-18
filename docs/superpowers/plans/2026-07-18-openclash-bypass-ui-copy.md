@@ -61,7 +61,7 @@ Unsupported; firewall4/nftables is required
 The exact Simplified Chinese switch description must be:
 
 ```text
-开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和内网 DNS 解析不再受本功能保护；OpenClash 规则接管或重定向这些流量时，会出现节点掉线、直连退化为 DERP、跨子网访问或内网 DNS 中断。使用 OpenClash 时必须保持开启。
+开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和 Tailnet DNS 解析不再受本功能保护；如果 OpenClash 规则接管或重定向这些流量，可能导致节点掉线、直连退化为 DERP、跨子网访问或 Tailnet DNS 中断。使用 OpenClash 时必须保持开启。
 ```
 
 Update `assert_po_entry_mutation_test()` to mutate the new active and disabled translations rather than the removed strings.
@@ -139,7 +139,7 @@ Update all removed msgids in the template and both language catalogs. Use these 
 The exact Traditional Chinese switch description must be:
 
 ```text
-開啟後，Tailscale 控制連線、直連通訊、Tailnet DNS 和跨子網流量不會被 OpenClash 接管。關閉後，這些流量將重新經過 OpenClash，節點在線、點對點直連、跨子網存取和內網 DNS 解析不再受本功能保護；OpenClash 規則接管或重新導向這些流量時，會出現節點離線、直連退化為 DERP、跨子網存取或內網 DNS 中斷。使用 OpenClash 時必須保持開啟。
+開啟後，Tailscale 控制連線、直連通訊、Tailnet DNS 和跨子網流量不會被 OpenClash 接管。關閉後，這些流量將重新經過 OpenClash，節點在線、點對點直連、跨子網存取和 Tailnet DNS 解析不再受本功能保護；如果 OpenClash 規則接管或重新導向這些流量，可能導致節點離線、直連退化為 DERP、跨子網存取或 Tailnet DNS 中斷。使用 OpenClash 時必須保持開啟。
 ```
 
 Use these Traditional Chinese status strings:
