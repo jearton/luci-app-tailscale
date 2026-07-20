@@ -267,9 +267,14 @@ stop_instance() {
 
 	# Remove dnsmasq settings
 	MagicDNSSuffix=$(tailscale status --json | awk -F'"' '/"MagicDNSSuffix"/ {last=$(NF-1)} END {print last}')
-	for suffix in $(uci show dhcp | grep -E "address=.*/${MagicDNSSuffix}/" | sed "s/'//g"); do
-		uci -q del_list $suffix
-	done
+	if [ -n "$MagicDNSSuffix" ]; then
+		target_address="/$MagicDNSSuffix/100.100.100.100"
+		indexes=$(uci show dhcp | sed -n 's/^dhcp\.@dnsmasq\[\([0-9][0-9]*\)\]=dnsmasq$/\1/p')
+		for index in $indexes; do
+			option="dhcp.@dnsmasq[$index].address"
+			uci -q del_list "$option=$target_address"
+		done
+	fi
  
 	# Tailscale owns tailscale0, policy rules, and table 52 routes. Do not reload
 	# network here; netifd must not manage tailscale0.

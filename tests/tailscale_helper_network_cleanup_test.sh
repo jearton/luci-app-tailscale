@@ -54,6 +54,8 @@ firewall.@defaults[0].forward=ACCEPT
 firewall.@forwarding[0]=forwarding
 firewall.@forwarding[0].src=lan
 firewall.@forwarding[0].dest=wan
+dhcp.@dnsmasq[0]=dnsmasq
+dhcp.@dnsmasq[0].address=/example.tailnet/100.100.100.100 /example.tailnet/192.0.2.53
 EOF
 
 cat >"$TMP_DIR/bin/uci" <<'SH'
@@ -208,7 +210,11 @@ case "${1:-}" in
 		printf '100.64.0.10\n'
 		;;
 	status)
-		printf '{"MagicDNSSuffix":"example.tailnet"}\n'
+		if [ "${TAILSCALE_EMPTY_MAGIC_DNS:-0}" = "1" ]; then
+			printf '{}\n'
+		else
+			printf '{"MagicDNSSuffix":"example.tailnet"}\n'
+		fi
 		;;
 	*)
 		echo "unsupported fake tailscale command: $*" >&2
@@ -247,8 +253,9 @@ run_helper() {
 	wan_direct_zones="${4:-wan}"
 	access="${5:-}"
 	disable_snat_subnet_routes="${6:-0}"
+	accept_dns="${7:-0}"
 	ACCESS="$access"
-	ACCEPT_DNS=0
+	ACCEPT_DNS="$accept_dns"
 	DISABLE_SNAT_SUBNET_ROUTES="$disable_snat_subnet_routes"
 	ALLOW_WAN_DIRECT="$allow_wan_direct"
 	TAILSCALE_PORT="$tailscale_port"
@@ -274,7 +281,7 @@ run_helper() {
 	TAILSCALE_HELPER_STATE_DIR="$TMP_DIR/state"
 	FIREWALL_PENDING_STATE_FILE="$TMP_DIR/firewall-pending"
 	export ACCESS ACCEPT_DNS DISABLE_SNAT_SUBNET_ROUTES ALLOW_WAN_DIRECT TAILSCALE_PORT WAN_DIRECT_ZONES UCI_DB UCI_CHANGES_LOG UCI_COMMIT_LOG UCI_REVERT_LOG
-	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG PATH
+	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG TAILSCALE_EMPTY_MAGIC_DNS PATH
 	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT TAILSCALE_HELPER_STATE_DIR FIREWALL_PENDING_STATE_FILE
 	export UCI_FAIL_DELETE_KEY UCI_FAIL_SHOW_PACKAGE UCI_FAIL_COMMIT_PACKAGE FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART
 	EXIT_NODE="$exit_node" export EXIT_NODE
@@ -308,6 +315,17 @@ enabled_override="$(awk -F= '$1 == "firewall.@forwarding[0].enabled" { print $2 
 actual: ${enabled_override:-missing}"
 
 [ -f "$TMP_DIR/state/exit_node_firewall_state" ] || fail "exit node enable should persist firewall restore state"
+
+: >"$TMP_DIR/uci_changes.log"
+run_helper "" 0 41641 wan "" 0 1
+if grep -F 'set dhcp.@dnsmasq[0].address=' "$TMP_DIR/uci_changes.log" >/dev/null; then
+	fail "MagicDNS setup must not duplicate its address when a dnsmasq list has additional user values"
+fi
+
+: >"$TMP_DIR/uci_changes.log"
+TAILSCALE_EMPTY_MAGIC_DNS=1 run_helper "" 0 41641 wan "" 0 1
+assert_not_contains 'set dhcp.@dnsmasq[0].address=//100.100.100.100' "$(cat "$TMP_DIR/uci_changes.log")" \
+	"MagicDNS setup must not write an invalid address when the suffix is unavailable"
 
 run_helper ""
 
