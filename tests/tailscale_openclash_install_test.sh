@@ -5,6 +5,8 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 UCI_DEFAULTS="$ROOT_DIR/root/etc/uci-defaults/40_luci-tailscale"
 TMP_DIR="${TMPDIR:-/tmp}/tailscale-openclash-install-test.$$"
+CONFIG_DIR="$TMP_DIR/etc/config"
+UPGRADE_STATE_DIR="$TMP_DIR/luci-app-tailscale-upgrade"
 
 cleanup() {
 	rm -rf "$TMP_DIR"
@@ -17,7 +19,7 @@ fail() {
 }
 
 [ -f "$UCI_DEFAULTS" ] || fail "missing package UCI defaults script"
-mkdir -p "$TMP_DIR/bin"
+mkdir -p "$TMP_DIR/bin" "$CONFIG_DIR"
 
 cat >"$TMP_DIR/tailscale_secrets" <<'SH'
 #!/bin/sh
@@ -33,6 +35,16 @@ chmod +x "$TMP_DIR/tailscale-openclash-bypass"
 
 cat >"$TMP_DIR/bin/uci" <<'SH'
 #!/bin/sh
+case "$*" in
+	'-q get tailscale.settings.enabled')
+		printf '%s\n' "${TAILSCALE_ENABLED:-0}"
+		exit 0
+		;;
+	'-q get tailscale_openclash.settings.enabled')
+		printf '%s\n' "${OPENCLASH_BYPASS_ENABLED:-1}"
+		exit 0
+		;;
+esac
 printf 'uci %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
 cat >/dev/null
 SH
@@ -55,6 +67,8 @@ run_defaults() {
 	sed \
 		-e "s#/usr/sbin/tailscale_secrets#$TMP_DIR/tailscale_secrets#g" \
 		-e "s#/etc/init.d/tailscale-openclash-bypass#$TMP_DIR/tailscale-openclash-bypass#g" \
+		-e "s#/etc/config/tailscale#$CONFIG_DIR/tailscale#g" \
+		-e "s#/etc/.luci-app-tailscale-upgrade#$UPGRADE_STATE_DIR#g" \
 		"$UCI_DEFAULTS" >"$TMP_DIR/uci-defaults"
 	chmod +x "$TMP_DIR/uci-defaults"
 
@@ -83,8 +97,102 @@ expected_absent='secrets migrate
 uci -q batch'
 [ "$absent_log" = "$expected_absent" ] || fail "missing bypass init script must not fail package defaults\nactual:\n$absent_log"
 
+cat >"$TMP_DIR/tailscale-openclash-bypass" <<'SH'
+#!/bin/sh
+printf 'bypass %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
+SH
+chmod +x "$TMP_DIR/tailscale-openclash-bypass"
+
+run_preinst() {
+	awk '
+		/^define Package\/luci-app-tailscale\/preinst$/ { in_preinst = 1; next }
+		in_preinst && /^endef$/ { exit }
+		in_preinst { print }
+	' "$ROOT_DIR/Makefile" \
+	| sed \
+		-e 's/\$\${/${/g' \
+		-e "s#/etc/config/tailscale#$CONFIG_DIR/tailscale#g" \
+		-e "s#/etc/.luci-app-tailscale-upgrade#$UPGRADE_STATE_DIR#g" \
+		>"$TMP_DIR/preinst"
+	[ -s "$TMP_DIR/preinst" ] || fail "missing package pre-install configuration snapshot"
+	chmod +x "$TMP_DIR/preinst"
+	IPKG_INSTROOT='' sh "$TMP_DIR/preinst"
+}
+
+cat >"$CONFIG_DIR/tailscale" <<'EOF'
+config tailscale 'settings'
+	option enabled '1'
+	option hostname 'upgrade-preserved'
+EOF
+cat >"$CONFIG_DIR/tailscale_openclash" <<'EOF'
+config openclash 'settings'
+	option enabled '1'
+EOF
+cp "$CONFIG_DIR/tailscale" "$TMP_DIR/tailscale-before-upgrade"
+cp "$CONFIG_DIR/tailscale_openclash" "$TMP_DIR/tailscale-openclash-before-upgrade"
+
+run_preinst
+[ -f "$UPGRADE_STATE_DIR/tailscale" ] || fail "pre-install hook must snapshot the existing Tailscale UCI config"
+[ -f "$UPGRADE_STATE_DIR/tailscale_openclash" ] || fail "pre-install hook must snapshot the existing OpenClash bypass UCI config"
+[ -f "$UPGRADE_STATE_DIR/.complete" ] || fail "pre-install hook must only publish a completed configuration snapshot"
+
+# Model package extraction replacing non-conffile files before the new package's
+# standard UCI-defaults phase runs.
+cat >"$CONFIG_DIR/tailscale" <<'EOF'
+config tailscale 'settings'
+	option enabled '0'
+EOF
+cat >"$CONFIG_DIR/tailscale_openclash" <<'EOF'
+config openclash 'settings'
+	option enabled '0'
+EOF
+
+# A failed package install can be retried after the new data files have already
+# replaced the old config. The second pre-install hook must retain the first
+# snapshot instead of replacing it with those defaults.
+run_preinst
+cmp -s "$TMP_DIR/tailscale-before-upgrade" "$UPGRADE_STATE_DIR/tailscale" || \
+	fail "retrying an interrupted upgrade must retain the first Tailscale configuration snapshot"
+cmp -s "$TMP_DIR/tailscale-openclash-before-upgrade" "$UPGRADE_STATE_DIR/tailscale_openclash" || \
+	fail "retrying an interrupted upgrade must retain the first OpenClash bypass configuration snapshot"
+
+upgrade_defaults_log="$(run_defaults enabled)"
+[ "$upgrade_defaults_log" = "$expected_enabled" ] || fail "upgrade defaults must restore configuration before reconciling the bypass\nactual:\n$upgrade_defaults_log"
+cmp -s "$TMP_DIR/tailscale-before-upgrade" "$CONFIG_DIR/tailscale" || \
+	fail "upgrade must preserve the existing Tailscale UCI configuration"
+cmp -s "$TMP_DIR/tailscale-openclash-before-upgrade" "$CONFIG_DIR/tailscale_openclash" || \
+	fail "upgrade must preserve the existing OpenClash bypass UCI configuration"
+[ ! -e "$UPGRADE_STATE_DIR/tailscale" ] || fail "successful configuration restore must remove the Tailscale snapshot"
+[ ! -e "$UPGRADE_STATE_DIR/tailscale_openclash" ] || fail "successful configuration restore must remove the OpenClash bypass snapshot"
+[ ! -d "$UPGRADE_STATE_DIR" ] || fail "successful configuration restore must remove the private snapshot directory"
+
+: >"$TMP_DIR/lifecycle.log"
+LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" "$TMP_DIR/tailscale-openclash-bypass" start
+LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" "$TMP_DIR/tailscale" start
+upgrade_restart_log="$(cat "$TMP_DIR/lifecycle.log")"
+expected_restart_log='bypass start
+tailscale start'
+[ "$upgrade_restart_log" = "$expected_restart_log" ] || fail "standard package restart must bring the bypass and enabled Tailscale service back after upgrade\nactual:\n$upgrade_restart_log"
+
+disabled_bypass_log="$(OPENCLASH_BYPASS_ENABLED=0 run_defaults enabled)"
+[ "$disabled_bypass_log" = "$expected_absent" ] || fail "package lifecycle must not re-enable a bypass the user disabled\nactual:\n$disabled_bypass_log"
+
+# Model a pre-install interruption after a partial state directory was written.
+# The next attempt must discard that partial data and publish a complete snapshot.
+mkdir -p "$UPGRADE_STATE_DIR"
+printf 'partial configuration\n' >"$UPGRADE_STATE_DIR/tailscale"
+run_preinst
+cmp -s "$TMP_DIR/tailscale-before-upgrade" "$UPGRADE_STATE_DIR/tailscale" || \
+	fail "retrying after an interrupted snapshot must replace partial Tailscale data"
+cmp -s "$TMP_DIR/tailscale-openclash-before-upgrade" "$UPGRADE_STATE_DIR/tailscale_openclash" || \
+	fail "retrying after an interrupted snapshot must replace partial OpenClash data"
+[ -f "$UPGRADE_STATE_DIR/.complete" ] || fail "retrying after an interrupted snapshot must publish a completion marker"
+run_defaults enabled >/dev/null
+[ ! -d "$UPGRADE_STATE_DIR" ] || fail "restoring a retried snapshot must remove the private state directory"
+
 run_prerm() {
 	mode="$1"
+	style="${2:-ipk}"
 	awk '
 		/^define Package\/luci-app-tailscale\/prerm$/ { in_prerm = 1; next }
 		in_prerm && /^endef$/ { exit }
@@ -95,6 +203,8 @@ run_prerm() {
 		-e "s#/usr/sbin/tailscale_openclash_bypass#$TMP_DIR/tailscale_openclash_bypass#g" \
 		-e "s#/etc/init.d/tailscale-openclash-bypass#$TMP_DIR/tailscale-openclash-bypass#g" \
 		-e "s#/etc/init.d/tailscale#$TMP_DIR/tailscale#g" \
+		-e "s#/etc/config/tailscale#$CONFIG_DIR/tailscale#g" \
+		-e "s#/etc/.luci-app-tailscale-upgrade#$UPGRADE_STATE_DIR#g" \
 		>"$TMP_DIR/prerm"
 	chmod +x "$TMP_DIR/prerm"
 
@@ -111,17 +221,37 @@ SH
 	chmod +x "$TMP_DIR/tailscale-openclash-bypass"
 
 	: >"$TMP_DIR/lifecycle.log"
-	IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm" "$mode"
+	if [ "$style" = 'apk' ]; then
+		IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm" "$mode"
+	else
+		IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm" "$TMP_DIR/prerm-wrapper" "$mode"
+	fi
 	cat "$TMP_DIR/lifecycle.log"
 }
 
 upgrade_prerm_log="$(run_prerm upgrade)"
 [ -z "$upgrade_prerm_log" ] || fail "package upgrade must preserve helper rules, bypass startup, and Tailscale\nactual:\n$upgrade_prerm_log"
+[ ! -d "$UPGRADE_STATE_DIR" ] || fail "package upgrade must not leave removal state or replace the pre-install snapshot"
+
+mkdir -p "$UPGRADE_STATE_DIR" "$UPGRADE_STATE_DIR.pending"
+: >"$UPGRADE_STATE_DIR/tailscale"
+: >"$UPGRADE_STATE_DIR/tailscale_openclash"
+: >"$UPGRADE_STATE_DIR/tailscale_openclash.absent"
+: >"$UPGRADE_STATE_DIR/.complete"
+: >"$UPGRADE_STATE_DIR.pending/tailscale"
+: >"$UPGRADE_STATE_DIR.pending/tailscale_openclash"
+: >"$UPGRADE_STATE_DIR.pending/tailscale_openclash.absent"
+: >"$UPGRADE_STATE_DIR.pending/.complete"
 
 prerm_log="$(run_prerm remove)"
 expected_prerm='helper cleanup
 bypass disable
 tailscale stop'
 [ "$prerm_log" = "$expected_prerm" ] || fail "package removal must clean helper rules, disable bypass boot startup, then stop Tailscale\nactual:\n$prerm_log"
+[ ! -d "$UPGRADE_STATE_DIR" ] || fail "package removal must remove completed upgrade state"
+[ ! -d "$UPGRADE_STATE_DIR.pending" ] || fail "package removal must remove pending upgrade state"
+
+apk_prerm_log="$(run_prerm 1.2.10 apk)"
+[ "$apk_prerm_log" = "$expected_prerm" ] || fail "OpenWrt APK pre-deinstall must perform package removal cleanup\nactual:\n$apk_prerm_log"
 
 echo "tailscale OpenClash install lifecycle tests passed"

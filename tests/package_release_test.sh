@@ -669,7 +669,7 @@ assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/us
 assert_contains '"/usr/sbin/tailscale_peer_probe": [ "exec" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "config_get authkey" root/etc/init.d/tailscale
 assert_contains 'tailscale_secrets migrate' root/etc/uci-defaults/40_luci-tailscale
-assert_contains 'if [ -x /etc/init.d/tailscale-openclash-bypass ]; then' root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'openclash_bypass_enabled="$(uci -q get tailscale_openclash.settings.enabled' root/etc/uci-defaults/40_luci-tailscale
 assert_contains '/etc/init.d/tailscale-openclash-bypass enable' root/etc/uci-defaults/40_luci-tailscale
 assert_contains '/etc/init.d/tailscale-openclash-bypass start' root/etc/uci-defaults/40_luci-tailscale
 assert_before 'tailscale_secrets migrate' '/etc/init.d/tailscale-openclash-bypass enable' root/etc/uci-defaults/40_luci-tailscale
@@ -681,17 +681,31 @@ assert_contains "TAILSCALE_INTERNAL_RELOAD" root/etc/init.d/tailscale
 assert_not_contains "RELOAD_MARKER_FILE" root/etc/init.d/tailscale
 assert_contains 'activate "$secrets_ref"' root/etc/init.d/tailscale
 assert_contains "Package/luci-app-tailscale/prerm" Makefile
+assert_contains "Package/luci-app-tailscale/preinst" Makefile
 assert_contains "Package/luci-app-tailscale/conffiles" Makefile
 assert_contains "/etc/config/tailscale" Makefile
 assert_contains "/etc/config/tailscale_openclash" Makefile
 assert_not_contains "Package/luci-app-tailscale/postinst" Makefile
+assert_contains "state_dir=/etc/.luci-app-tailscale-upgrade" Makefile
+assert_contains 'state_pending="$${state_dir}.pending"' Makefile
+assert_contains 'clear_state_dir()' Makefile
+assert_contains "cp /etc/config/tailscale \"\$\${state_pending}/tailscale\"" Makefile
+assert_not_contains "/tmp/luci-app-tailscale-upgrade" Makefile
+assert_contains "restore_upgrade_config" root/etc/uci-defaults/40_luci-tailscale
+assert_contains "cleanup_upgrade_state()" root/etc/uci-defaults/40_luci-tailscale
+assert_contains "UPGRADE_STATE_DIR=/etc/.luci-app-tailscale-upgrade" root/etc/uci-defaults/40_luci-tailscale
+assert_contains "chmod 700 \"\$\${state_pending}\"" Makefile
+assert_before "restore_upgrade_config" "tailscale_secrets migrate" root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
 assert_contains '/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true' Makefile
 assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
 assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
-assert_contains 'remove) ;;' Makefile
-assert_contains '*) exit 0 ;;' Makefile
+assert_contains 'case "$${2:-}" in' Makefile
+assert_contains 'remove|[0-9]*) ;;' Makefile
+assert_contains 'case "$${1:-}" in' Makefile
+assert_contains '"$${cleanup_dir}/tailscale_openclash.absent" "$${cleanup_dir}/.complete"' Makefile
+assert_not_contains 'APK_SCRIPT' Makefile
 assert_before "/usr/sbin/tailscale_openclash_bypass cleanup" "/etc/init.d/tailscale stop" Makefile
 assert_before "/etc/init.d/tailscale-openclash-bypass disable" "/etc/init.d/tailscale stop" Makefile
 assert_contains "/etc/init.d/tailscale stop" Makefile
