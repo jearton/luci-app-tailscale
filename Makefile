@@ -8,9 +8,12 @@ LUCI_TITLE:=LuCI for Tailscale
 LUCI_DEPENDS:=+tailscale +jshn +curl +jq +flock
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1.2.12
+PKG_VERSION:=1.2.13
 
-# opkg runs preinst before unpacking; apk keeps protected files under /etc.
+# Keep UCI configs as ordinary package data. The pre-install hook snapshots an
+# existing configuration before extraction; the UCI-defaults script restores it
+# afterwards. Declaring the same files as opkg conffiles conflicts with this
+# lifecycle and creates inactive *-opkg files during upgrades.
 define Package/luci-app-tailscale/preinst
 #!/bin/sh
 state_dir=/etc/.luci-app-tailscale-upgrade
@@ -40,11 +43,6 @@ fi
 : >"$${state_pending}/.complete" || exit 1
 mv "$${state_pending}" "$${state_dir}" || exit 1
 exit 0
-endef
-
-define Package/luci-app-tailscale/conffiles
-/etc/config/tailscale
-/etc/config/tailscale_openclash
 endef
 
 define Package/luci-app-tailscale/prerm

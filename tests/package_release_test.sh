@@ -206,7 +206,7 @@ assert_release_permissions() {
 	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
 }
 
-assert_contains "PKG_VERSION:=1.2.12" Makefile
+assert_contains "PKG_VERSION:=1.2.13" Makefile
 assert_file .github/workflows/release.yml
 assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
@@ -684,7 +684,7 @@ assert_not_contains "RELOAD_MARKER_FILE" root/etc/init.d/tailscale
 assert_contains 'activate "$secrets_ref"' root/etc/init.d/tailscale
 assert_contains "Package/luci-app-tailscale/prerm" Makefile
 assert_contains "Package/luci-app-tailscale/preinst" Makefile
-assert_contains "Package/luci-app-tailscale/conffiles" Makefile
+assert_not_contains "Package/luci-app-tailscale/conffiles" Makefile
 assert_contains "/etc/config/tailscale" Makefile
 assert_contains "/etc/config/tailscale_openclash" Makefile
 assert_not_contains "Package/luci-app-tailscale/postinst" Makefile
