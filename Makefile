@@ -8,7 +8,7 @@ LUCI_TITLE:=LuCI for Tailscale
 LUCI_DEPENDS:=+tailscale +jshn +curl +jq +flock
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1.2.11
+PKG_VERSION:=1.2.12
 
 # opkg runs preinst before unpacking; apk keeps protected files under /etc.
 define Package/luci-app-tailscale/preinst

@@ -206,7 +206,7 @@ assert_release_permissions() {
 	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
 }
 
-assert_contains "PKG_VERSION:=1.2.11" Makefile
+assert_contains "PKG_VERSION:=1.2.12" Makefile
 assert_file .github/workflows/release.yml
 assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml

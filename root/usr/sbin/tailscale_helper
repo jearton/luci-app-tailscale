@@ -447,13 +447,15 @@ done
 # Configure Tailscale MagicDNS
 if [ "$ACCEPT_DNS" = "1" ]; then
 	MagicDNSSuffix=$("$TAILSCALE_BIN" status --json | awk -F'"' '/"MagicDNSSuffix"/ {last=$(NF-1)} END {print last}')
-	target_address="/$MagicDNSSuffix/100.100.100.100"
-	index=$(uci show dhcp | grep 'dhcp.@dnsmasq\[[0-9]\+\]=dnsmasq' | grep -o '[0-9]\+')
-	for i in $index; do
-		if ! uci get dhcp.@dnsmasq[$i].address 2>/dev/null | grep -qxF "$target_address"; then
-			uci add_list "dhcp.@dnsmasq[$i].address=$target_address" || revert_exit "Failed to add DNS address."
-		fi
-	done
+	if [ -n "$MagicDNSSuffix" ]; then
+		target_address="/$MagicDNSSuffix/100.100.100.100"
+		index=$(uci show dhcp | sed -n 's/^dhcp\.@dnsmasq\[\([0-9][0-9]*\)\]=dnsmasq$/\1/p')
+		for i in $index; do
+			if ! uci -q get "dhcp.@dnsmasq[$i].address" 2>/dev/null | tr ' ' '\n' | grep -qxF "$target_address"; then
+				uci add_list "dhcp.@dnsmasq[$i].address=$target_address" || revert_exit "Failed to add DNS address."
+			fi
+		done
+	fi
 fi
 
 # Remove legacy LuCI network wrappers for tailscale0. tailscaled owns the TUN

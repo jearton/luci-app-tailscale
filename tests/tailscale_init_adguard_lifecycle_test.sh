@@ -138,12 +138,16 @@ run_stop_instance() {
 	ADGUARD_DNS_STATE_DIR="$TMP_DIR/stop-state"
 	CONFIG_DIR="$TMP_DIR/config"
 	UCI_CHANGES_OUT="$TMP_DIR/uci-changes.out"
+	UCI_DEL_LIST_LOG="$TMP_DIR/uci-del-list.log"
+	UCI_DNSMASQ_ADDRESS_STATE="$TMP_DIR/dnsmasq-addresses"
 	TAILSCALE_STATUS_OUT="$TMP_DIR/tailscale-status.out"
 	TAILSCALED_CLEANUP_LOG="$TMP_DIR/tailscaled-cleanup.log"
 	rm -rf "$ADGUARD_DNS_STATE_DIR" "$CONFIG_DIR"
 	: >"$FAKE_ADGUARD_LOG"
 	: >"$FAKE_HELPER_LOG"
 	: >"$UCI_CHANGES_OUT"
+	: >"$UCI_DEL_LIST_LOG"
+	printf '%s\n' '/example.tailnet/100.100.100.100' '/example.tailnet/192.0.2.53' >"$UCI_DNSMASQ_ADDRESS_STATE"
 	: >"$TAILSCALE_STATUS_OUT"
 	: >"$TAILSCALED_CLEANUP_LOG"
 	mkdir -p "$ADGUARD_DNS_STATE_DIR" "$CONFIG_DIR"
@@ -151,7 +155,7 @@ run_stop_instance() {
 	printf 'recovery-state\n' >"$CONFIG_DIR/exit_node_firewall_state"
 	FAKE_HELPER_FAIL_ARG="$helper_fail_arg"
 	FAKE_ADGUARD_FAIL=0
-	export FAKE_ADGUARD_LOG FAKE_ADGUARD_FAIL FAKE_HELPER_LOG FAKE_HELPER_FAIL_ARG ADGUARD_DNS_STATE_DIR CONFIG_DIR UCI_CHANGES_OUT TAILSCALE_STATUS_OUT TAILSCALED_CLEANUP_LOG
+	export FAKE_ADGUARD_LOG FAKE_ADGUARD_FAIL FAKE_HELPER_LOG FAKE_HELPER_FAIL_ARG ADGUARD_DNS_STATE_DIR CONFIG_DIR UCI_CHANGES_OUT UCI_DEL_LIST_LOG UCI_DNSMASQ_ADDRESS_STATE TAILSCALE_STATUS_OUT TAILSCALED_CLEANUP_LOG
 
 	(
 		. "$INIT_SCRIPT"
@@ -191,7 +195,9 @@ run_stop_instance() {
 		uci() {
 			case "$1" in
 				show)
-					:
+					if [ "${2:-}" = 'dhcp' ]; then
+						printf '%s\n' 'dhcp.@dnsmasq[0]=dnsmasq'
+					fi
 					;;
 				changes)
 					cat "$UCI_CHANGES_OUT"
@@ -203,7 +209,10 @@ run_stop_instance() {
 					shift
 					case "$1" in
 						del_list)
-							:
+							printf '%s\n' "${2:-}" >>"$UCI_DEL_LIST_LOG"
+							[ "${2:-}" = 'dhcp.@dnsmasq[0].address=/example.tailnet/100.100.100.100' ]
+							grep -vxF '/example.tailnet/100.100.100.100' "$UCI_DNSMASQ_ADDRESS_STATE" >"$UCI_DNSMASQ_ADDRESS_STATE.tmp"
+							mv "$UCI_DNSMASQ_ADDRESS_STATE.tmp" "$UCI_DNSMASQ_ADDRESS_STATE"
 							;;
 						*)
 							return 1
@@ -341,6 +350,11 @@ run_stop_instance
 
 [ ! -s "$FAKE_ADGUARD_LOG" ] || fail "stop_instance must not switch AdGuard before procd terminates the watcher
 actual: $(cat "$FAKE_ADGUARD_LOG")"
+
+[ "$(cat "$UCI_DEL_LIST_LOG")" = 'dhcp.@dnsmasq[0].address=/example.tailnet/100.100.100.100' ] || fail "stop_instance must remove only the exact MagicDNS dnsmasq address
+actual: $(cat "$UCI_DEL_LIST_LOG")"
+[ "$(cat "$UCI_DNSMASQ_ADDRESS_STATE")" = '/example.tailnet/192.0.2.53' ] || fail "stop_instance must preserve a user-defined address with the same MagicDNS suffix
+actual: $(cat "$UCI_DNSMASQ_ADDRESS_STATE")"
 
 service_stopped_output="$(run_service_stopped)"
 [ "$service_stopped_output" = "--apply-profile down" ] || fail "service_stopped should apply the down profile after procd terminates the watcher
