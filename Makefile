@@ -8,10 +8,20 @@ LUCI_TITLE:=LuCI for Tailscale
 LUCI_DEPENDS:=+tailscale +jshn +curl +jq +flock
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1.2.9
+PKG_VERSION:=1.2.10
+
+define Package/luci-app-tailscale/conffiles
+/etc/config/tailscale
+/etc/config/tailscale_openclash
+endef
 
 define Package/luci-app-tailscale/prerm
 #!/bin/sh
+case "$${1:-}" in
+	remove) ;;
+	*) exit 0 ;;
+esac
+
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then
 	/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true
 fi

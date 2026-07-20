@@ -84,6 +84,7 @@ uci -q batch'
 [ "$absent_log" = "$expected_absent" ] || fail "missing bypass init script must not fail package defaults\nactual:\n$absent_log"
 
 run_prerm() {
+	mode="$1"
 	awk '
 		/^define Package\/luci-app-tailscale\/prerm$/ { in_prerm = 1; next }
 		in_prerm && /^endef$/ { exit }
@@ -110,11 +111,14 @@ SH
 	chmod +x "$TMP_DIR/tailscale-openclash-bypass"
 
 	: >"$TMP_DIR/lifecycle.log"
-	IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm"
+	IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm" "$mode"
 	cat "$TMP_DIR/lifecycle.log"
 }
 
-prerm_log="$(run_prerm)"
+upgrade_prerm_log="$(run_prerm upgrade)"
+[ -z "$upgrade_prerm_log" ] || fail "package upgrade must preserve helper rules, bypass startup, and Tailscale\nactual:\n$upgrade_prerm_log"
+
+prerm_log="$(run_prerm remove)"
 expected_prerm='helper cleanup
 bypass disable
 tailscale stop'

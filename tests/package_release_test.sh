@@ -206,7 +206,7 @@ assert_release_permissions() {
 	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
 }
 
-assert_contains "PKG_VERSION:=1.2.9" Makefile
+assert_contains "PKG_VERSION:=1.2.10" Makefile
 assert_file .github/workflows/release.yml
 assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
@@ -681,12 +681,17 @@ assert_contains "TAILSCALE_INTERNAL_RELOAD" root/etc/init.d/tailscale
 assert_not_contains "RELOAD_MARKER_FILE" root/etc/init.d/tailscale
 assert_contains 'activate "$secrets_ref"' root/etc/init.d/tailscale
 assert_contains "Package/luci-app-tailscale/prerm" Makefile
+assert_contains "Package/luci-app-tailscale/conffiles" Makefile
+assert_contains "/etc/config/tailscale" Makefile
+assert_contains "/etc/config/tailscale_openclash" Makefile
 assert_not_contains "Package/luci-app-tailscale/postinst" Makefile
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
 assert_contains '/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true' Makefile
 assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
 assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
+assert_contains 'remove) ;;' Makefile
+assert_contains '*) exit 0 ;;' Makefile
 assert_before "/usr/sbin/tailscale_openclash_bypass cleanup" "/etc/init.d/tailscale stop" Makefile
 assert_before "/etc/init.d/tailscale-openclash-bypass disable" "/etc/init.d/tailscale stop" Makefile
 assert_contains "/etc/init.d/tailscale stop" Makefile
