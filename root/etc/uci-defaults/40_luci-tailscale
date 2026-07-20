@@ -34,11 +34,6 @@ fi
 
 /usr/sbin/tailscale_secrets migrate || exit 1
 
-uci -q batch <<-EOF >/dev/null
-	delete ucitrack.@tailscale[-1]
-	commit ucitrack
-EOF
-
 openclash_bypass_enabled="$(uci -q get tailscale_openclash.settings.enabled 2>/dev/null || true)"
 if [ "$openclash_bypass_enabled" = '1' ] && [ -x /etc/init.d/tailscale-openclash-bypass ]; then
 	/etc/init.d/tailscale-openclash-bypass enable

@@ -206,7 +206,7 @@ assert_release_permissions() {
 	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
 }
 
-assert_contains "PKG_VERSION:=1.2.10" Makefile
+assert_contains "PKG_VERSION:=1.2.11" Makefile
 assert_file .github/workflows/release.yml
 assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
@@ -669,6 +669,8 @@ assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/us
 assert_contains '"/usr/sbin/tailscale_peer_probe": [ "exec" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "config_get authkey" root/etc/init.d/tailscale
 assert_contains 'tailscale_secrets migrate' root/etc/uci-defaults/40_luci-tailscale
+assert_not_contains 'ucitrack.@tailscale' root/etc/uci-defaults/40_luci-tailscale
+assert_not_contains 'uci -q batch' root/etc/uci-defaults/40_luci-tailscale
 assert_contains 'openclash_bypass_enabled="$(uci -q get tailscale_openclash.settings.enabled' root/etc/uci-defaults/40_luci-tailscale
 assert_contains '/etc/init.d/tailscale-openclash-bypass enable' root/etc/uci-defaults/40_luci-tailscale
 assert_contains '/etc/init.d/tailscale-openclash-bypass start' root/etc/uci-defaults/40_luci-tailscale

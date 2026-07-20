@@ -81,10 +81,9 @@ run_defaults() {
 
 enabled_log="$(run_defaults enabled)"
 expected_enabled='secrets migrate
-uci -q batch
 bypass enable
 bypass start'
-[ "$enabled_log" = "$expected_enabled" ] || fail "package defaults must migrate credentials, update ucitrack, then enable and start bypass\nactual:\n$enabled_log"
+[ "$enabled_log" = "$expected_enabled" ] || fail "package defaults must migrate credentials, then enable and start bypass\nactual:\n$enabled_log"
 
 cat >"$TMP_DIR/tailscale-openclash-bypass" <<'SH'
 #!/bin/sh
@@ -93,8 +92,7 @@ SH
 chmod +x "$TMP_DIR/tailscale-openclash-bypass"
 
 absent_log="$(run_defaults without-bypass)"
-expected_absent='secrets migrate
-uci -q batch'
+expected_absent='secrets migrate'
 [ "$absent_log" = "$expected_absent" ] || fail "missing bypass init script must not fail package defaults\nactual:\n$absent_log"
 
 cat >"$TMP_DIR/tailscale-openclash-bypass" <<'SH'
