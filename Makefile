@@ -8,7 +8,7 @@ LUCI_TITLE:=LuCI for Tailscale
 LUCI_DEPENDS:=+tailscale +jshn +curl +jq +flock
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1.2.13
+PKG_VERSION:=1.2.14
 
 # Keep UCI configs as ordinary package data. The pre-install hook snapshots an
 # existing configuration before extraction; the UCI-defaults script restores it

@@ -203,6 +203,7 @@ printf '%s\n' "$*" >>"${TAILSCALE_LOG:?}"
 
 case "${1:-}" in
 	up)
+		[ "${TAILSCALE_UP_FAIL:-0}" != "1" ] || exit 1
 		exit 0
 		;;
 	ip)
@@ -278,15 +279,16 @@ run_helper() {
 	FIREWALL_INIT="$TMP_DIR/firewall-init"
 	TAILSCALE_INIT="$TMP_DIR/tailscale-init"
 	DNSMASQ_INIT="$TMP_DIR/dnsmasq-init"
+	TAILSCALE_SECRETS_BIN="$TMP_DIR/tailscale-secrets"
 	TAILSCALE_HELPER_STATE_DIR="$TMP_DIR/state"
 	FIREWALL_PENDING_STATE_FILE="$TMP_DIR/firewall-pending"
 	export ACCESS ACCEPT_DNS DISABLE_SNAT_SUBNET_ROUTES ALLOW_WAN_DIRECT TAILSCALE_PORT WAN_DIRECT_ZONES UCI_DB UCI_CHANGES_LOG UCI_COMMIT_LOG UCI_REVERT_LOG
 	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG TAILSCALE_EMPTY_MAGIC_DNS PATH
-	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT TAILSCALE_HELPER_STATE_DIR FIREWALL_PENDING_STATE_FILE
-	export UCI_FAIL_DELETE_KEY UCI_FAIL_SHOW_PACKAGE UCI_FAIL_COMMIT_PACKAGE FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART
+	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT TAILSCALE_SECRETS_BIN TAILSCALE_HELPER_STATE_DIR FIREWALL_PENDING_STATE_FILE
+	export UCI_FAIL_DELETE_KEY UCI_FAIL_SHOW_PACKAGE UCI_FAIL_COMMIT_PACKAGE FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART TAILSCALE_UP_FAIL
 	EXIT_NODE="$exit_node" export EXIT_NODE
 
-	if ! "$SCRIPT"; then
+	if ! "$SCRIPT" --run; then
 		printf 'helper failed for EXIT_NODE=%s\n' "$exit_node" >&2
 		[ -s "$LOGGER_LOG" ] && { printf 'logger:\n' >&2; cat "$LOGGER_LOG" >&2; }
 		[ -s "$TAILSCALE_INIT_LOG" ] && { printf 'tailscale-init:\n' >&2; cat "$TAILSCALE_INIT_LOG" >&2; }
@@ -294,6 +296,13 @@ run_helper() {
 		return 1
 	fi
 }
+
+cat >"$TMP_DIR/tailscale-secrets" <<'SH'
+#!/bin/sh
+[ "${1:-}" = "get" ] && [ "${2:-}" = "authkey" ] || exit 1
+printf '%s\n' 'tskey-test-only'
+SH
+chmod +x "$TMP_DIR/tailscale-secrets"
 
 : >"$TMP_DIR/uci_changes.log"
 : >"$TMP_DIR/uci_commit.log"
@@ -305,6 +314,29 @@ run_helper() {
 : >"$TMP_DIR/dnsmasq.log"
 
 run_helper "peer-exit-node"
+
+: >"$TMP_DIR/tailscale-init.log"
+: >"$TMP_DIR/uci_revert.log"
+TAILSCALE_UP_FAIL=1
+export TAILSCALE_UP_FAIL
+if run_helper "" >/dev/null 2>&1; then
+	fail "helper must fail when tailscale up fails"
+fi
+unset TAILSCALE_UP_FAIL
+[ ! -s "$TMP_DIR/tailscale-init.log" ] || fail "a tailscale up failure must not stop the Tailscale service"
+assert_contains "dhcp" "$(cat "$TMP_DIR/uci_revert.log")" "helper failure should revert its pending DHCP changes"
+assert_contains "network" "$(cat "$TMP_DIR/uci_revert.log")" "helper failure should revert its pending network changes"
+assert_contains "firewall" "$(cat "$TMP_DIR/uci_revert.log")" "helper failure should revert its pending firewall changes"
+
+: >"$TMP_DIR/tailscale.log"
+: >"$TMP_DIR/tailscale-init.log"
+: >"$TMP_DIR/uci_revert.log"
+if "$SCRIPT" --unexpected-mode >/dev/null 2>&1; then
+	fail "helper must reject an unsupported mode"
+fi
+[ ! -s "$TMP_DIR/tailscale.log" ] || fail "unsupported helper mode must not call tailscale up"
+[ ! -s "$TMP_DIR/tailscale-init.log" ] || fail "unsupported helper mode must not stop the Tailscale service"
+[ ! -s "$TMP_DIR/uci_revert.log" ] || fail "unsupported helper mode must not revert unrelated UCI changes"
 
 enabled_forward="$(awk -F= '$1 == "firewall.@defaults[0].forward" { print $2 }' "$TMP_DIR/uci_db")"
 [ "$enabled_forward" = "REJECT" ] || fail "exit node enable should force firewall default forward to REJECT
