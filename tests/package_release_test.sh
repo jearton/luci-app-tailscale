@@ -206,7 +206,7 @@ assert_release_permissions() {
 	' "$ROOT_DIR/$file" || fail "$file should grant contents: read globally and contents: write only to the release job"
 }
 
-assert_contains "PKG_VERSION:=1.2.13" Makefile
+assert_contains "PKG_VERSION:=1.2.14" Makefile
 assert_file .github/workflows/release.yml
 assert_release_permissions .github/workflows/release.yml
 assert_contains "tags:" .github/workflows/release.yml
@@ -330,6 +330,7 @@ assert_contains "--argjson ok" root/usr/sbin/tailscale_peer_probe
 assert_contains "ping --c=1 --timeout=2s" root/usr/sbin/tailscale_peer_probe
 assert_not_contains "json_escape()" root/usr/sbin/tailscale_peer_probe
 assert_file root/etc/uci-defaults/40_luci-tailscale
+assert_file tests/tailscale_legacy_adguard_migration_test.sh
 assert_contains '"admin/vpn/tailscale/peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json
 assert_contains '"title": "Peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json
 assert_contains '"path": "tailscale/peers"' root/usr/share/luci/menu.d/luci-app-tailscale.json
@@ -668,14 +669,23 @@ assert_not_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/r
 assert_not_contains "/usr/sbin/tailscale_adguard_dns_switch --preflight" root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_contains '"/usr/sbin/tailscale_peer_probe": [ "exec" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains "config_get authkey" root/etc/init.d/tailscale
-assert_contains 'tailscale_secrets migrate' root/etc/uci-defaults/40_luci-tailscale
+assert_not_contains "get authkey" root/etc/init.d/tailscale
+assert_not_contains "--authkey=" root/etc/init.d/tailscale
+assert_contains 'procd_set_param command $PROG --run' root/etc/init.d/tailscale
+assert_contains 'TAILSCALE_SECRETS_BIN' root/usr/sbin/tailscale_helper
+assert_not_contains 'TAILSCALE_INIT' root/usr/sbin/tailscale_helper
+assert_contains 'Unsupported tailscale_helper mode' root/usr/sbin/tailscale_helper
+assert_contains '"$TAILSCALE_SECRETS_BIN" migrate' root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'cleanup_legacy_adguard_dns_service' root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'tailscale-adguard-dns.disabled' root/etc/uci-defaults/40_luci-tailscale
+assert_before 'cleanup_legacy_adguard_dns_service' '"$TAILSCALE_SECRETS_BIN" migrate' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains 'ucitrack.@tailscale' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains 'uci -q batch' root/etc/uci-defaults/40_luci-tailscale
-assert_contains 'openclash_bypass_enabled="$(uci -q get tailscale_openclash.settings.enabled' root/etc/uci-defaults/40_luci-tailscale
-assert_contains '/etc/init.d/tailscale-openclash-bypass enable' root/etc/uci-defaults/40_luci-tailscale
-assert_contains '/etc/init.d/tailscale-openclash-bypass start' root/etc/uci-defaults/40_luci-tailscale
-assert_before 'tailscale_secrets migrate' '/etc/init.d/tailscale-openclash-bypass enable' root/etc/uci-defaults/40_luci-tailscale
-assert_before '/etc/init.d/tailscale-openclash-bypass enable' '/etc/init.d/tailscale-openclash-bypass start' root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'openclash_bypass_enabled="$("$UCI_BIN" -q get tailscale_openclash.settings.enabled' root/etc/uci-defaults/40_luci-tailscale
+assert_contains '"$OPENCLASH_BYPASS_INIT" enable' root/etc/uci-defaults/40_luci-tailscale
+assert_contains '"$OPENCLASH_BYPASS_INIT" start' root/etc/uci-defaults/40_luci-tailscale
+assert_before '"$TAILSCALE_SECRETS_BIN" migrate' '"$OPENCLASH_BYPASS_INIT" enable' root/etc/uci-defaults/40_luci-tailscale
+assert_before '"$OPENCLASH_BYPASS_INIT" enable' '"$OPENCLASH_BYPASS_INIT" start' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains "option adguard_password" root/etc/config/tailscale
 assert_not_contains "option authkey" root/etc/config/tailscale
 assert_contains "--cleanup-managed-firewall" root/etc/init.d/tailscale
@@ -695,9 +705,9 @@ assert_contains "cp /etc/config/tailscale \"\$\${state_pending}/tailscale\"" Mak
 assert_not_contains "/tmp/luci-app-tailscale-upgrade" Makefile
 assert_contains "restore_upgrade_config" root/etc/uci-defaults/40_luci-tailscale
 assert_contains "cleanup_upgrade_state()" root/etc/uci-defaults/40_luci-tailscale
-assert_contains "UPGRADE_STATE_DIR=/etc/.luci-app-tailscale-upgrade" root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'UPGRADE_STATE_DIR="${UPGRADE_STATE_DIR:-/etc/.luci-app-tailscale-upgrade}"' root/etc/uci-defaults/40_luci-tailscale
 assert_contains "chmod 700 \"\$\${state_pending}\"" Makefile
-assert_before "restore_upgrade_config" "tailscale_secrets migrate" root/etc/uci-defaults/40_luci-tailscale
+assert_before "restore_upgrade_config" '"$TAILSCALE_SECRETS_BIN" migrate' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass enable" Makefile
 assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
 assert_contains '/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true' Makefile

@@ -276,8 +276,10 @@ run_service_stopped() {
 capture_tailscale_snat_args() {
 	disable_snat="$1"
 	PROCD_LOG="$TMP_DIR/procd-snat-$disable_snat.log"
+	FAKE_SECRETS_LOG="$TMP_DIR/procd-secrets-$disable_snat.log"
 	: >"$PROCD_LOG"
-	export PROCD_LOG
+	: >"$FAKE_SECRETS_LOG"
+	export PROCD_LOG FAKE_SECRETS_LOG
 	(
 		. "$INIT_SCRIPT"
 		PROGS="$TMP_DIR/fake-secrets"
@@ -302,6 +304,7 @@ capture_tailscale_snat_args() {
 		procd_close_instance() { :; }
 		tailscale_helper settings
 	)
+	[ ! -s "$FAKE_SECRETS_LOG" ] || fail "init must not retrieve the auth key while building the procd command"
 	cat "$PROCD_LOG"
 }
 
@@ -376,6 +379,11 @@ fi
 [ -f "$CONFIG_DIR/exit_node_firewall_state" ] || fail "stop_instance must preserve helper recovery state when cleanup fails"
 
 snat_disabled_args="$(capture_tailscale_snat_args 1)"
+printf '%s\n' "$snat_disabled_args" | grep -F 'set:command ' | grep -F -- ' --run' >/dev/null || \
+	fail "Tailscale helper procd command must use the explicit --run mode"
+if printf '%s\n' "$snat_disabled_args" | grep -F -- '--authkey=' >/dev/null; then
+	fail "Tailscale auth key must not be included in the procd command"
+fi
 printf '%s\n' "$snat_disabled_args" | grep -F -- '--snat-subnet-routes=false' >/dev/null || \
 	fail "site-to-site enable must pass --snat-subnet-routes=false"
 printf '%s\n' "$snat_disabled_args" | grep -F 'DISABLE_SNAT_SUBNET_ROUTES=1' >/dev/null || \

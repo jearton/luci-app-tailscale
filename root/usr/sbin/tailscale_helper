@@ -9,7 +9,7 @@ FLOCK_BIN="${FLOCK_BIN:-flock}"
 IFCONFIG_BIN="${IFCONFIG_BIN:-ifconfig}"
 FIREWALL_INIT="${FIREWALL_INIT:-/etc/init.d/firewall}"
 DNSMASQ_INIT="${DNSMASQ_INIT:-/etc/init.d/dnsmasq}"
-TAILSCALE_INIT="${TAILSCALE_INIT:-/etc/init.d/tailscale}"
+TAILSCALE_SECRETS_BIN="${TAILSCALE_SECRETS_BIN:-/usr/sbin/tailscale_secrets}"
 TAILSCALE_HELPER_STATE_DIR="${TAILSCALE_HELPER_STATE_DIR:-/var/lib/tailscale}"
 EXIT_NODE_FIREWALL_STATE_FILE="$TAILSCALE_HELPER_STATE_DIR/exit_node_firewall_state"
 FIREWALL_PENDING_STATE_FILE="${FIREWALL_PENDING_STATE_FILE:-/var/run/tailscale-firewall-pending}"
@@ -26,7 +26,6 @@ log_error() {
 revert_exit() {
 	log_error "$1"
 	uci revert dhcp && uci revert network && uci revert firewall
-	"$TAILSCALE_INIT" stop
 	exit 1
 }
 
@@ -400,6 +399,9 @@ cleanup_managed_firewall() {
 }
 
 case "${1:-}" in
+	--run)
+		shift
+		;;
 	--cleanup-exit-node-firewall)
 		restore_exit_node_firewall_state || {
 			log_error "Failed to restore exit-node firewall state."
@@ -426,10 +428,20 @@ case "${1:-}" in
 		}
 		exit 0
 		;;
+	*)
+		log_error "Unsupported tailscale_helper mode: ${1:-<none>}"
+		exit 2
+		;;
 esac
 
 # Execute tailscale up command
-"$TAILSCALE_BIN" up --reset "$@" || revert_exit "tailscale up failed."
+authkey="$("$TAILSCALE_SECRETS_BIN" get authkey 2>/dev/null || true)"
+if [ -n "$authkey" ]; then
+	"$TAILSCALE_BIN" up --reset --authkey="$authkey" "$@" || revert_exit "tailscale up failed."
+	unset authkey
+else
+	"$TAILSCALE_BIN" up --reset "$@" || revert_exit "tailscale up failed."
+fi
 
 # Use flock to acquire an exclusive lock
 exec 9> "$LOCK_FILE"
