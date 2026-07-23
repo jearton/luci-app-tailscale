@@ -33,6 +33,12 @@ printf 'bypass %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
 SH
 chmod +x "$TMP_DIR/tailscale-openclash-bypass"
 
+cat >"$TMP_DIR/tailscale-policy-routing" <<'SH'
+#!/bin/sh
+printf 'policy %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
+SH
+chmod +x "$TMP_DIR/tailscale-policy-routing"
+
 cat >"$TMP_DIR/bin/uci" <<'SH'
 #!/bin/sh
 case "$*" in
@@ -67,6 +73,7 @@ run_defaults() {
 	sed \
 		-e "s#/usr/sbin/tailscale_secrets#$TMP_DIR/tailscale_secrets#g" \
 		-e "s#/etc/init.d/tailscale-openclash-bypass#$TMP_DIR/tailscale-openclash-bypass#g" \
+		-e "s#/etc/init.d/tailscale-policy-routing#$TMP_DIR/tailscale-policy-routing#g" \
 		-e "s#/etc/config/tailscale#$CONFIG_DIR/tailscale#g" \
 		-e "s#/etc/.luci-app-tailscale-upgrade#$UPGRADE_STATE_DIR#g" \
 		"$UCI_DEFAULTS" >"$TMP_DIR/uci-defaults"
@@ -82,8 +89,10 @@ run_defaults() {
 enabled_log="$(run_defaults enabled)"
 expected_enabled='secrets migrate
 bypass enable
-bypass start'
-[ "$enabled_log" = "$expected_enabled" ] || fail "package defaults must migrate credentials, then enable and start bypass\nactual:\n$enabled_log"
+bypass start
+policy enable
+policy start'
+[ "$enabled_log" = "$expected_enabled" ] || fail "package defaults must migrate credentials, then enable and start managed helpers\nactual:\n$enabled_log"
 
 cat >"$TMP_DIR/tailscale-openclash-bypass" <<'SH'
 #!/bin/sh
@@ -92,8 +101,10 @@ SH
 chmod +x "$TMP_DIR/tailscale-openclash-bypass"
 
 absent_log="$(run_defaults without-bypass)"
-expected_absent='secrets migrate'
-[ "$absent_log" = "$expected_absent" ] || fail "missing bypass init script must not fail package defaults\nactual:\n$absent_log"
+expected_absent='secrets migrate
+policy enable
+policy start'
+[ "$absent_log" = "$expected_absent" ] || fail "missing bypass init script must not prevent policy-routing initialization\nactual:\n$absent_log"
 
 cat >"$TMP_DIR/tailscale-openclash-bypass" <<'SH'
 #!/bin/sh
@@ -126,12 +137,18 @@ cat >"$CONFIG_DIR/tailscale_openclash" <<'EOF'
 config openclash 'settings'
 	option enabled '1'
 EOF
+cat >"$CONFIG_DIR/tailscale_policy_routing" <<'EOF'
+config settings 'settings'
+	option enabled '1'
+EOF
 cp "$CONFIG_DIR/tailscale" "$TMP_DIR/tailscale-before-upgrade"
 cp "$CONFIG_DIR/tailscale_openclash" "$TMP_DIR/tailscale-openclash-before-upgrade"
+cp "$CONFIG_DIR/tailscale_policy_routing" "$TMP_DIR/tailscale-policy-routing-before-upgrade"
 
 run_preinst
 [ -f "$UPGRADE_STATE_DIR/tailscale" ] || fail "pre-install hook must snapshot the existing Tailscale UCI config"
 [ -f "$UPGRADE_STATE_DIR/tailscale_openclash" ] || fail "pre-install hook must snapshot the existing OpenClash bypass UCI config"
+[ -f "$UPGRADE_STATE_DIR/tailscale_policy_routing" ] || fail "pre-install hook must snapshot the existing policy-routing UCI config"
 [ -f "$UPGRADE_STATE_DIR/.complete" ] || fail "pre-install hook must only publish a completed configuration snapshot"
 
 # Model package extraction replacing non-conffile files before the new package's
@@ -144,6 +161,10 @@ cat >"$CONFIG_DIR/tailscale_openclash" <<'EOF'
 config openclash 'settings'
 	option enabled '0'
 EOF
+cat >"$CONFIG_DIR/tailscale_policy_routing" <<'EOF'
+config settings 'settings'
+	option enabled '0'
+EOF
 
 # A failed package install can be retried after the new data files have already
 # replaced the old config. The second pre-install hook must retain the first
@@ -153,6 +174,8 @@ cmp -s "$TMP_DIR/tailscale-before-upgrade" "$UPGRADE_STATE_DIR/tailscale" || \
 	fail "retrying an interrupted upgrade must retain the first Tailscale configuration snapshot"
 cmp -s "$TMP_DIR/tailscale-openclash-before-upgrade" "$UPGRADE_STATE_DIR/tailscale_openclash" || \
 	fail "retrying an interrupted upgrade must retain the first OpenClash bypass configuration snapshot"
+cmp -s "$TMP_DIR/tailscale-policy-routing-before-upgrade" "$UPGRADE_STATE_DIR/tailscale_policy_routing" || \
+	fail "retrying an interrupted upgrade must retain the first policy-routing configuration snapshot"
 
 upgrade_defaults_log="$(run_defaults enabled)"
 [ "$upgrade_defaults_log" = "$expected_enabled" ] || fail "upgrade defaults must restore configuration before reconciling the bypass\nactual:\n$upgrade_defaults_log"
@@ -160,8 +183,11 @@ cmp -s "$TMP_DIR/tailscale-before-upgrade" "$CONFIG_DIR/tailscale" || \
 	fail "upgrade must preserve the existing Tailscale UCI configuration"
 cmp -s "$TMP_DIR/tailscale-openclash-before-upgrade" "$CONFIG_DIR/tailscale_openclash" || \
 	fail "upgrade must preserve the existing OpenClash bypass UCI configuration"
+cmp -s "$TMP_DIR/tailscale-policy-routing-before-upgrade" "$CONFIG_DIR/tailscale_policy_routing" || \
+	fail "upgrade must preserve the existing policy-routing UCI configuration"
 [ ! -e "$UPGRADE_STATE_DIR/tailscale" ] || fail "successful configuration restore must remove the Tailscale snapshot"
 [ ! -e "$UPGRADE_STATE_DIR/tailscale_openclash" ] || fail "successful configuration restore must remove the OpenClash bypass snapshot"
+[ ! -e "$UPGRADE_STATE_DIR/tailscale_policy_routing" ] || fail "successful configuration restore must remove the policy-routing snapshot"
 [ ! -d "$UPGRADE_STATE_DIR" ] || fail "successful configuration restore must remove the private snapshot directory"
 
 : >"$TMP_DIR/lifecycle.log"
@@ -184,6 +210,8 @@ cmp -s "$TMP_DIR/tailscale-before-upgrade" "$UPGRADE_STATE_DIR/tailscale" || \
 	fail "retrying after an interrupted snapshot must replace partial Tailscale data"
 cmp -s "$TMP_DIR/tailscale-openclash-before-upgrade" "$UPGRADE_STATE_DIR/tailscale_openclash" || \
 	fail "retrying after an interrupted snapshot must replace partial OpenClash data"
+cmp -s "$TMP_DIR/tailscale-policy-routing-before-upgrade" "$UPGRADE_STATE_DIR/tailscale_policy_routing" || \
+	fail "retrying after an interrupted snapshot must replace partial policy-routing data"
 [ -f "$UPGRADE_STATE_DIR/.complete" ] || fail "retrying after an interrupted snapshot must publish a completion marker"
 run_defaults enabled >/dev/null
 [ ! -d "$UPGRADE_STATE_DIR" ] || fail "restoring a retried snapshot must remove the private state directory"
@@ -200,6 +228,8 @@ run_prerm() {
 		-e 's/\$\${/${/g' \
 		-e "s#/usr/sbin/tailscale_openclash_bypass#$TMP_DIR/tailscale_openclash_bypass#g" \
 		-e "s#/etc/init.d/tailscale-openclash-bypass#$TMP_DIR/tailscale-openclash-bypass#g" \
+		-e "s#/usr/sbin/tailscale_policy_routing#$TMP_DIR/tailscale_policy_routing_helper#g" \
+		-e "s#/etc/init.d/tailscale-policy-routing#$TMP_DIR/tailscale-policy-routing#g" \
 		-e "s#/etc/init.d/tailscale#$TMP_DIR/tailscale#g" \
 		-e "s#/etc/config/tailscale#$CONFIG_DIR/tailscale#g" \
 		-e "s#/etc/.luci-app-tailscale-upgrade#$UPGRADE_STATE_DIR#g" \
@@ -218,6 +248,18 @@ printf 'bypass %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
 SH
 	chmod +x "$TMP_DIR/tailscale-openclash-bypass"
 
+	cat >"$TMP_DIR/tailscale_policy_routing_helper" <<'SH'
+#!/bin/sh
+printf 'policy-helper %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
+SH
+	chmod +x "$TMP_DIR/tailscale_policy_routing_helper"
+
+	cat >"$TMP_DIR/tailscale-policy-routing" <<'SH'
+#!/bin/sh
+printf 'policy %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
+SH
+	chmod +x "$TMP_DIR/tailscale-policy-routing"
+
 	: >"$TMP_DIR/lifecycle.log"
 	if [ "$style" = 'apk' ]; then
 		IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm" "$mode"
@@ -235,15 +277,19 @@ mkdir -p "$UPGRADE_STATE_DIR" "$UPGRADE_STATE_DIR.pending"
 : >"$UPGRADE_STATE_DIR/tailscale"
 : >"$UPGRADE_STATE_DIR/tailscale_openclash"
 : >"$UPGRADE_STATE_DIR/tailscale_openclash.absent"
+: >"$UPGRADE_STATE_DIR/tailscale_policy_routing"
 : >"$UPGRADE_STATE_DIR/.complete"
 : >"$UPGRADE_STATE_DIR.pending/tailscale"
 : >"$UPGRADE_STATE_DIR.pending/tailscale_openclash"
 : >"$UPGRADE_STATE_DIR.pending/tailscale_openclash.absent"
+: >"$UPGRADE_STATE_DIR.pending/tailscale_policy_routing"
 : >"$UPGRADE_STATE_DIR.pending/.complete"
 
 prerm_log="$(run_prerm remove)"
 expected_prerm='helper cleanup
 bypass disable
+policy-helper cleanup
+policy disable
 tailscale stop'
 [ "$prerm_log" = "$expected_prerm" ] || fail "package removal must clean helper rules, disable bypass boot startup, then stop Tailscale\nactual:\n$prerm_log"
 [ ! -d "$UPGRADE_STATE_DIR" ] || fail "package removal must remove completed upgrade state"

@@ -25,7 +25,8 @@ state_pending="$${state_dir}.pending"
 
 clear_state_dir() {
 	rm -f "$${1}/tailscale" "$${1}/tailscale_openclash" \
-		"$${1}/tailscale_openclash.absent" "$${1}/.complete"
+		"$${1}/tailscale_openclash.absent" "$${1}/tailscale_policy_routing" \
+		"$${1}/.complete"
 	rmdir "$${1}" 2>/dev/null || [ ! -e "$${1}" ]
 }
 
@@ -39,6 +40,9 @@ if [ -f /etc/config/tailscale_openclash ]; then
 	cp /etc/config/tailscale_openclash "$${state_pending}/tailscale_openclash" || exit 1
 else
 	: >"$${state_pending}/tailscale_openclash.absent" || exit 1
+fi
+if [ -f /etc/config/tailscale_policy_routing ]; then
+	cp /etc/config/tailscale_policy_routing "$${state_pending}/tailscale_policy_routing" || exit 1
 fi
 : >"$${state_pending}/.complete" || exit 1
 mv "$${state_pending}" "$${state_dir}" || exit 1
@@ -67,12 +71,19 @@ fi
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-openclash-bypass ]; then
 	/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true
 fi
+if [ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_policy_routing ]; then
+	/usr/sbin/tailscale_policy_routing cleanup >/dev/null 2>&1 || true
+fi
+if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-policy-routing ]; then
+	/etc/init.d/tailscale-policy-routing disable >/dev/null 2>&1 || true
+fi
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale ]; then
 	/etc/init.d/tailscale stop >/dev/null 2>&1 || exit 1
 fi
 for cleanup_dir in "$${state_dir}" "$${state_dir}.pending"; do
 	rm -f "$${cleanup_dir}/tailscale" "$${cleanup_dir}/tailscale_openclash" \
-		"$${cleanup_dir}/tailscale_openclash.absent" "$${cleanup_dir}/.complete"
+		"$${cleanup_dir}/tailscale_openclash.absent" "$${cleanup_dir}/tailscale_policy_routing" \
+		"$${cleanup_dir}/.complete"
 	rmdir "$${cleanup_dir}" 2>/dev/null || true
 done
 exit 0

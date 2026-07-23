@@ -60,6 +60,13 @@ const callOpenclashBypassStatus = rpc.declare({
 	reject: true
 });
 
+const callPolicyRoutingStatus = rpc.declare({
+	object: 'luci.tailscale',
+	method: 'policy_routing_status',
+	expect: { '': {} },
+	reject: true
+});
+
 const ADGUARD_PREFLIGHT_CHECKS = [
 	{ key: 'adguard_process', label: _('AdGuard process') },
 	{ key: 'port_53_adguard', label: _('Port 53 is AdGuard') },
@@ -364,6 +371,36 @@ async function refreshOpenclashBypassStatus() {
 	}
 }
 
+function renderPolicyRoutingStatus(status) {
+	if (status && status.state === 'active' && !status.mwan3_present)
+		return _('Enabled; mwan3 is not installed');
+	if (status && status.state === 'active' && !status.mwan3_earlier_mark_rule)
+		return _('Enabled; no earlier mwan3-marked rule was detected');
+
+	const labels = {
+		active: _('Enabled; Tailscale routes take precedence over mwan3'),
+		waiting: _('Enabled; waiting for the managed policy rule'),
+		disabled: _('Disabled; mwan3 routing is unchanged'),
+		blocked_default_route: _('Blocked; table 52 contains a default route'),
+		blocked_priority_conflict: _('Blocked; priority 1000 is already in use'),
+		blocked_ownership: _('Blocked; an existing rule is not managed by this app'),
+		error: _('Configuration error')
+	};
+	return labels[status && status.state] || _('Unknown status');
+}
+
+async function refreshPolicyRoutingStatus() {
+	const node = document.getElementById('policy_routing_status');
+	if (!node)
+		return;
+	try {
+		const status = await callPolicyRoutingStatus();
+		node.textContent = renderPolicyRoutingStatus(status);
+	} catch (error) {
+		node.textContent = _('Unable to read Tailscale policy-routing status.');
+	}
+}
+
 function hasFormListValue(option, section_id) {
 	return toList(option.formvalue(section_id)).map(function(value) {
 		return String(value || '').trim();
@@ -385,10 +422,18 @@ return view.extend({
 				uci.load('firewall'),
 				getStatus(),
 				getInterfaceSubnets(),
-				uci.load('tailscale_openclash')
+				uci.load('tailscale_openclash'),
+				uci.load('tailscale_policy_routing')
 			]).then(function(data) {
-				data.push(secretStatus);
-				return data;
+				return [
+					data[0],
+					data[1],
+					data[2],
+					data[3],
+					data[4],
+					secretStatus,
+					data[5]
+				];
 			});
 		});
 	},
@@ -504,6 +549,27 @@ return view.extend({
 		o = s.taboption('advance', form.Flag, 'accept_routes', _('Accept Routes'), _('Accept subnet routes that other nodes advertise.'));
 		o.default = o.disabled;
 		o.rmempty = false;
+
+			o = s.taboption('advance', form.Flag, 'mwan3_table52_precedence', _('Prioritize Tailscale Routes Before mwan3'),
+				_('Give routes already present in Tailscale table 52 priority over mwan3-marked traffic. This fixes LAN clients being sent to a WAN instead of a Tailnet or routed subnet. Public destinations not present in table 52 continue through mwan3. Disabled leaves mwan3 precedence unchanged. Verify from a real LAN client or with an equivalent mwan3 fwmark; the router\'s unmarked ip route get alone is insufficient. The feature remains blocked while table 52 has a default route, such as when using an exit node.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+		o.cfgvalue = function() {
+			return uci.get('tailscale_policy_routing', 'settings', 'enabled') || '0';
+		};
+		o.write = function(section_id, value) {
+			return uci.set('tailscale_policy_routing', 'settings', 'enabled', value);
+		};
+		o.remove = function() {
+			return uci.set('tailscale_policy_routing', 'settings', 'enabled', '0');
+		};
+
+		o = s.taboption('advance', form.DummyValue, '_policy_routing_status', _('Policy Routing Status'));
+		o.rawhtml = true;
+		o.cfgvalue = function() { return ''; };
+		o.renderWidget = function() {
+			return E('span', { id: 'policy_routing_status' }, _('Checking ...'));
+		};
 
 		o = s.taboption('advance', form.Value, 'hostname', _('Device Name'), _("Leave blank to use the device's hostname."));
 		o.default = '';
@@ -897,6 +963,7 @@ return view.extend({
 				updateStatus();
 			}).then(function(result) {
 				window.setTimeout(refreshOpenclashBypassStatus, 0);
+				window.setTimeout(refreshPolicyRoutingStatus, 0);
 				return result;
 			}).finally(function() {
 				saveInFlight = null;
@@ -907,6 +974,7 @@ return view.extend({
 		return Promise.resolve(m.render()).then(function(node) {
 			window.setTimeout(refreshAdguardPreflightStatus, 0);
 			window.setTimeout(refreshOpenclashBypassStatus, 0);
+			window.setTimeout(refreshPolicyRoutingStatus, 0);
 			return node;
 		});
 	}

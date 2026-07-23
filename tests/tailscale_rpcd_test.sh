@@ -111,12 +111,32 @@ case "${OPENCLASH_HELPER_MODE:-success}" in
 SH
 chmod +x "$TMP_DIR/openclash-helper"
 
+cat >"$TMP_DIR/policy-routing-helper" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >"${POLICY_ROUTING_HELPER_ARGV_LOG:?}"
+case "${POLICY_ROUTING_HELPER_MODE:-success}" in
+	success)
+		printf '%s\n' '{"state":"active","enabled":true,"mwan3_present":true}'
+		;;
+	fail)
+		printf '%s\n' 'partial helper output'
+		printf '%s\n' 'helper failed' >&2
+		exit 7
+		;;
+	invalid)
+		printf '%s\n' 'not JSON'
+		;;
+esac
+SH
+chmod +x "$TMP_DIR/policy-routing-helper"
+
 PREFLIGHT_ARGV_LOG="$TMP_DIR/argv.log"
 PREFLIGHT_ENV_LOG="$TMP_DIR/env.log"
 SECRETS_ARGV_LOG="$TMP_DIR/secrets-argv.log"
 SECRETS_STDIN_LOG="$TMP_DIR/secrets-stdin.log"
 OPENCLASH_HELPER_ARGV_LOG="$TMP_DIR/openclash-helper-argv.log"
-export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG OPENCLASH_HELPER_ARGV_LOG
+POLICY_ROUTING_HELPER_ARGV_LOG="$TMP_DIR/policy-routing-helper-argv.log"
+export PREFLIGHT_ARGV_LOG PREFLIGHT_ENV_LOG SECRETS_ARGV_LOG SECRETS_STDIN_LOG OPENCLASH_HELPER_ARGV_LOG POLICY_ROUTING_HELPER_ARGV_LOG
 : >"$SECRETS_ARGV_LOG"
 : >"$SECRETS_STDIN_LOG"
 
@@ -127,6 +147,8 @@ printf '%s' "$list_json" | jq -e '.secret_status == {} and (has("set_secret") | 
 	fail "rpcd list output must declare secret status and write methods"
 printf '%s' "$list_json" | jq -e '.openclash_bypass_status == {}' >/dev/null || \
 	fail "rpcd list output must declare the read-only OpenClash bypass status method"
+printf '%s' "$list_json" | jq -e '.policy_routing_status == {}' >/dev/null || \
+	fail "rpcd list output must declare the read-only policy-routing status method"
 
 openclash_status_response="$(printf '%s\n' '{"ignored":"caller-controlled input"}' | OPENCLASH_BYPASS_BIN="$TMP_DIR/openclash-helper" \
 	"$RPCD_SCRIPT" call openclash_bypass_status)"
@@ -148,6 +170,27 @@ if openclash_invalid_response="$(printf '%s\n' '{}' | OPENCLASH_HELPER_MODE=inva
 fi
 printf '%s' "$openclash_invalid_response" | jq -e '.code == 2 and .ready == "fail" and (.error | type == "string")' >/dev/null || \
 	fail "invalid OpenClash helper JSON must return controlled JSON errors"
+
+policy_status_response="$(printf '%s\n' '{"ignored":"caller-controlled input"}' | POLICY_ROUTING_BIN="$TMP_DIR/policy-routing-helper" \
+	"$RPCD_SCRIPT" call policy_routing_status)"
+printf '%s' "$policy_status_response" | jq -e '.state == "active" and .enabled == true and .mwan3_present == true' >/dev/null || \
+	fail "rpcd must return the policy-routing helper status object unchanged"
+[ "$(cat "$POLICY_ROUTING_HELPER_ARGV_LOG")" = "status" ] || \
+	fail "rpcd must invoke the policy-routing helper with the fixed status argument only"
+
+if policy_failure_response="$(printf '%s\n' '{}' | POLICY_ROUTING_HELPER_MODE=fail POLICY_ROUTING_BIN="$TMP_DIR/policy-routing-helper" \
+	"$RPCD_SCRIPT" call policy_routing_status 2>&1)"; then
+	fail "rpcd must fail when the policy-routing helper exits nonzero"
+fi
+printf '%s' "$policy_failure_response" | jq -e '.code == 2 and .ready == "fail" and (.error | type == "string")' >/dev/null || \
+	fail "nonzero policy-routing helper exits must return controlled JSON errors"
+
+if policy_invalid_response="$(printf '%s\n' '{}' | POLICY_ROUTING_HELPER_MODE=invalid POLICY_ROUTING_BIN="$TMP_DIR/policy-routing-helper" \
+	"$RPCD_SCRIPT" call policy_routing_status 2>&1)"; then
+	fail "rpcd must fail when the policy-routing helper returns invalid JSON"
+fi
+printf '%s' "$policy_invalid_response" | jq -e '.code == 2 and .ready == "fail" and (.error | type == "string")' >/dev/null || \
+	fail "invalid policy-routing helper JSON must return controlled JSON errors"
 
 status_response="$(printf '%s\n' '{}' | SECRETS_BIN="$TMP_DIR/secrets" "$RPCD_SCRIPT" call secret_status)"
 printf '%s' "$status_response" | jq -e '.authkey_set == "1" and .adguard_password_set == "1"' >/dev/null || \

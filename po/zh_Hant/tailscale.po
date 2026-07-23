@@ -629,3 +629,39 @@ msgstr "保護 Tailscale 流量（繞過 OpenClash）"
 
 msgid "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash."
 msgstr "開啟後，Tailscale 控制連線、直連通訊、Tailnet DNS 和跨子網流量不會被 OpenClash 接管。關閉後，這些流量將重新經過 OpenClash，節點在線、點對點直連、跨子網存取和 Tailnet DNS 解析不再受本功能保護；如果 OpenClash 規則接管或重新導向這些流量，可能導致節點離線、直連退化為 DERP、跨子網存取或 Tailnet DNS 中斷。使用 OpenClash 時必須保持開啟。"
+
+msgid "Prioritize Tailscale Routes Before mwan3"
+msgstr "優先讓 Tailscale 路由先於 mwan3"
+
+msgid "Give routes already present in Tailscale table 52 priority over mwan3-marked traffic. This fixes LAN clients being sent to a WAN instead of a Tailnet or routed subnet. Public destinations not present in table 52 continue through mwan3. Disabled leaves mwan3 precedence unchanged. Verify from a real LAN client or with an equivalent mwan3 fwmark; the router's unmarked ip route get alone is insufficient. The feature remains blocked while table 52 has a default route, such as when using an exit node."
+msgstr "讓已存在於 Tailscale 路由表 52 中的路由優先於帶 mwan3 標記的流量。這可修復 LAN 用戶端存取 Tailnet 或已路由子網時被錯誤送往 WAN 的問題。不在路由表 52 中的公網目標仍由 mwan3 處理。關閉後保持 mwan3 原有優先順序。請從真實 LAN 用戶端驗證，或使用等效的 mwan3 fwmark；僅在路由器上執行未標記的 ip route get 不足以驗證。若路由表 52 存在預設路由（例如正在使用出口節點），功能會保持阻止狀態。"
+
+msgid "Policy Routing Status"
+msgstr "策略路由狀態"
+
+msgid "Enabled; mwan3 is not installed"
+msgstr "已開啟，未安裝 mwan3"
+
+msgid "Enabled; no earlier mwan3-marked rule was detected"
+msgstr "已開啟，未偵測到較早的 mwan3 標記規則"
+
+msgid "Enabled; Tailscale routes take precedence over mwan3"
+msgstr "已開啟，Tailscale 路由優先於 mwan3"
+
+msgid "Enabled; waiting for the managed policy rule"
+msgstr "已開啟，正在等待受管理的策略路由規則"
+
+msgid "Disabled; mwan3 routing is unchanged"
+msgstr "已關閉，mwan3 路由保持不變"
+
+msgid "Blocked; table 52 contains a default route"
+msgstr "已阻止，路由表 52 包含預設路由"
+
+msgid "Blocked; priority 1000 is already in use"
+msgstr "已阻止，優先順序 1000 已被占用"
+
+msgid "Blocked; an existing rule is not managed by this app"
+msgstr "已阻止，現有規則不由本應用程式管理"
+
+msgid "Unable to read Tailscale policy-routing status."
+msgstr "無法讀取 Tailscale 策略路由狀態。"

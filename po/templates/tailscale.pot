@@ -634,3 +634,39 @@ msgstr ""
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:801
 msgid "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash."
 msgstr ""
+
+msgid "Prioritize Tailscale Routes Before mwan3"
+msgstr ""
+
+msgid "Give routes already present in Tailscale table 52 priority over mwan3-marked traffic. This fixes LAN clients being sent to a WAN instead of a Tailnet or routed subnet. Public destinations not present in table 52 continue through mwan3. Disabled leaves mwan3 precedence unchanged. Verify from a real LAN client or with an equivalent mwan3 fwmark; the router's unmarked ip route get alone is insufficient. The feature remains blocked while table 52 has a default route, such as when using an exit node."
+msgstr ""
+
+msgid "Policy Routing Status"
+msgstr ""
+
+msgid "Enabled; mwan3 is not installed"
+msgstr ""
+
+msgid "Enabled; no earlier mwan3-marked rule was detected"
+msgstr ""
+
+msgid "Enabled; Tailscale routes take precedence over mwan3"
+msgstr ""
+
+msgid "Enabled; waiting for the managed policy rule"
+msgstr ""
+
+msgid "Disabled; mwan3 routing is unchanged"
+msgstr ""
+
+msgid "Blocked; table 52 contains a default route"
+msgstr ""
+
+msgid "Blocked; priority 1000 is already in use"
+msgstr ""
+
+msgid "Blocked; an existing rule is not managed by this app"
+msgstr ""
+
+msgid "Unable to read Tailscale policy-routing status."
+msgstr ""

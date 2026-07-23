@@ -245,6 +245,10 @@ assert_file root/usr/sbin/tailscale_adguard_dns_switch
 assert_file root/usr/sbin/tailscale_openclash_bypass
 assert_file root/etc/config/tailscale_openclash
 assert_file root/etc/init.d/tailscale-openclash-bypass
+assert_file root/etc/config/tailscale_policy_routing
+assert_file root/etc/init.d/tailscale-policy-routing
+assert_file root/etc/hotplug.d/iface/98-tailscale-policy-routing
+assert_file root/usr/sbin/tailscale_policy_routing
 assert_file root/usr/sbin/tailscale_peer_probe
 assert_file root/usr/sbin/tailscale_secrets
 assert_file root/lib/upgrade/keep.d/luci-app-tailscale
@@ -270,6 +274,20 @@ assert_contains 'firewall.$section.dest_port=$port' root/usr/sbin/tailscale_help
 assert_contains 'firewall.$section.target=ACCEPT' root/usr/sbin/tailscale_helper
 assert_not_contains "tailscale_openclash_bypass" root/usr/sbin/tailscale_helper
 assert_not_contains "openclash_custom_firewall_rules.sh" root/usr/sbin/tailscale_helper
+assert_contains 'POLICY_ROUTING_HELPER' root/usr/sbin/tailscale_helper
+assert_contains '"$POLICY_ROUTING_HELPER" sync' root/usr/sbin/tailscale_helper
+assert_not_contains '/etc/config/firewall' root/usr/sbin/tailscale_policy_routing
+assert_not_contains 'uci commit firewall' root/usr/sbin/tailscale_policy_routing
+assert_not_contains '/etc/init.d/firewall' root/usr/sbin/tailscale_policy_routing
+assert_not_contains '/etc/init.d/openclash' root/usr/sbin/tailscale_policy_routing
+assert_not_contains '"$MWAN3_INIT" reload' root/usr/sbin/tailscale_policy_routing
+assert_not_contains '"$MWAN3_INIT" restart' root/usr/sbin/tailscale_policy_routing
+assert_not_contains '"$MWAN3_INIT" start' root/usr/sbin/tailscale_policy_routing
+assert_not_contains '"$MWAN3_INIT" stop' root/usr/sbin/tailscale_policy_routing
+assert_not_contains 'mwan3 restart' root/usr/sbin/tailscale_policy_routing
+assert_contains 'network.ts_mwan3_table52' root/usr/sbin/tailscale_policy_routing
+assert_contains "PRIORITY='1000'" root/usr/sbin/tailscale_policy_routing
+assert_contains "TABLE='52'" root/usr/sbin/tailscale_policy_routing
 assert_not_contains "/etc/config/firewall" root/usr/sbin/tailscale_openclash_bypass
 assert_not_contains "uci commit firewall" root/usr/sbin/tailscale_openclash_bypass
 assert_not_contains "/etc/init.d/firewall" root/usr/sbin/tailscale_openclash_bypass
@@ -288,6 +306,12 @@ assert_contains 'msgid "Configuration error"' po/templates/tailscale.pot
 assert_contains 'msgid "Unknown status"' po/templates/tailscale.pot
 assert_contains 'msgid "Unable to read OpenClash bypass status."' po/templates/tailscale.pot
 assert_contains 'msgid "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash."' po/templates/tailscale.pot
+assert_contains 'msgid "Prioritize Tailscale Routes Before mwan3"' po/templates/tailscale.pot
+assert_contains 'msgid "Policy Routing Status"' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled; mwan3 is not installed"' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled; no earlier mwan3-marked rule was detected"' po/templates/tailscale.pot
+assert_contains 'msgid "Enabled; Tailscale routes take precedence over mwan3"' po/templates/tailscale.pot
+assert_contains 'msgid "Unable to read Tailscale policy-routing status."' po/templates/tailscale.pot
 assert_po_entry "OpenClash" "OpenClash" po/zh_Hans/tailscale.po
 assert_po_entry "Protect Tailscale Traffic (Bypass OpenClash)" "保护 Tailscale 流量（绕过 OpenClash）" po/zh_Hans/tailscale.po
 assert_po_entry "Status" "状态" po/zh_Hans/tailscale.po
@@ -301,6 +325,12 @@ assert_po_entry "Configuration error" "配置错误" po/zh_Hans/tailscale.po
 assert_po_entry "Unknown status" "未知状态" po/zh_Hans/tailscale.po
 assert_po_entry "Unable to read OpenClash bypass status." "无法读取 OpenClash 绕过状态。" po/zh_Hans/tailscale.po
 assert_po_entry "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash." "开启后，Tailscale 控制连接、直连通信、Tailnet DNS 和跨子网流量不会被 OpenClash 接管。关闭后，这些流量将重新经过 OpenClash，节点在线、点对点直连、跨子网访问和 Tailnet DNS 解析不再受本功能保护；如果 OpenClash 规则接管或重定向这些流量，可能导致节点掉线、直连退化为 DERP、跨子网访问或 Tailnet DNS 中断。使用 OpenClash 时必须保持开启。" po/zh_Hans/tailscale.po
+assert_po_entry "Prioritize Tailscale Routes Before mwan3" "优先让 Tailscale 路由先于 mwan3" po/zh_Hans/tailscale.po
+assert_po_entry "Policy Routing Status" "策略路由状态" po/zh_Hans/tailscale.po
+assert_po_entry "Enabled; mwan3 is not installed" "已开启，未安装 mwan3" po/zh_Hans/tailscale.po
+assert_po_entry "Enabled; no earlier mwan3-marked rule was detected" "已开启，未检测到更早的 mwan3 标记规则" po/zh_Hans/tailscale.po
+assert_po_entry "Enabled; Tailscale routes take precedence over mwan3" "已开启，Tailscale 路由优先于 mwan3" po/zh_Hans/tailscale.po
+assert_po_entry "Unable to read Tailscale policy-routing status." "无法读取 Tailscale 策略路由状态。" po/zh_Hans/tailscale.po
 assert_po_entry "OpenClash" "OpenClash" po/zh_Hant/tailscale.po
 assert_po_entry "Protect Tailscale Traffic (Bypass OpenClash)" "保護 Tailscale 流量（繞過 OpenClash）" po/zh_Hant/tailscale.po
 assert_po_entry "Status" "狀態" po/zh_Hant/tailscale.po
@@ -314,6 +344,12 @@ assert_po_entry "Configuration error" "設定錯誤" po/zh_Hant/tailscale.po
 assert_po_entry "Unknown status" "未知狀態" po/zh_Hant/tailscale.po
 assert_po_entry "Unable to read OpenClash bypass status." "無法讀取 OpenClash 繞過狀態。" po/zh_Hant/tailscale.po
 assert_po_entry "Keep Tailscale control connections, direct connections, Tailnet DNS, and subnet traffic outside OpenClash. When disabled, this traffic is handled by OpenClash; node connectivity, direct paths, subnet access, and internal DNS are no longer protected by this feature. Keep this enabled while using OpenClash." "開啟後，Tailscale 控制連線、直連通訊、Tailnet DNS 和跨子網流量不會被 OpenClash 接管。關閉後，這些流量將重新經過 OpenClash，節點在線、點對點直連、跨子網存取和 Tailnet DNS 解析不再受本功能保護；如果 OpenClash 規則接管或重新導向這些流量，可能導致節點離線、直連退化為 DERP、跨子網存取或 Tailnet DNS 中斷。使用 OpenClash 時必須保持開啟。" po/zh_Hant/tailscale.po
+assert_po_entry "Prioritize Tailscale Routes Before mwan3" "優先讓 Tailscale 路由先於 mwan3" po/zh_Hant/tailscale.po
+assert_po_entry "Policy Routing Status" "策略路由狀態" po/zh_Hant/tailscale.po
+assert_po_entry "Enabled; mwan3 is not installed" "已開啟，未安裝 mwan3" po/zh_Hant/tailscale.po
+assert_po_entry "Enabled; no earlier mwan3-marked rule was detected" "已開啟，未偵測到較早的 mwan3 標記規則" po/zh_Hant/tailscale.po
+assert_po_entry "Enabled; Tailscale routes take precedence over mwan3" "已開啟，Tailscale 路由優先於 mwan3" po/zh_Hant/tailscale.po
+assert_po_entry "Unable to read Tailscale policy-routing status." "無法讀取 Tailscale 策略路由狀態。" po/zh_Hant/tailscale.po
 assert_po_entry_mutation_test
 assert_contains 'msgid "Allow WAN Direct"' po/templates/tailscale.pot
 assert_contains 'msgid "WAN Direct Source Zones"' po/templates/tailscale.pot
@@ -660,9 +696,9 @@ assert_contains 'msgid "Failed to stage protected credentials."' po/zh_Hans/tail
 assert_contains 'msgstr "暂存受保护凭证失败。"' po/zh_Hans/tailscale.po
 assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secrets" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 acl_file=root/usr/share/rpcd/acl.d/luci-app-tailscale.json
-assert_jq '.["luci-app-tailscale"].read.uci == ["tailscale", "tailscale_openclash"]' "$acl_file" 'ACL read UCI access must be exactly tailscale and tailscale_openclash'
-assert_jq '.["luci-app-tailscale"].write.uci == ["tailscale", "tailscale_openclash"]' "$acl_file" 'ACL write UCI access must be exactly tailscale and tailscale_openclash'
-assert_jq '.["luci-app-tailscale"].read.ubus["luci.tailscale"] == ["secret_status", "openclash_bypass_status"]' "$acl_file" 'ACL read ubus access must be exactly the two read-only Tailscale methods'
+assert_jq '.["luci-app-tailscale"].read.uci == ["tailscale", "tailscale_openclash", "tailscale_policy_routing"]' "$acl_file" 'ACL read UCI access must include the isolated policy-routing package'
+assert_jq '.["luci-app-tailscale"].write.uci == ["tailscale", "tailscale_openclash", "tailscale_policy_routing"]' "$acl_file" 'ACL write UCI access must include the isolated policy-routing package'
+assert_jq '.["luci-app-tailscale"].read.ubus["luci.tailscale"] == ["secret_status", "openclash_bypass_status", "policy_routing_status"]' "$acl_file" 'ACL read ubus access must include the policy-routing status method'
 assert_jq '.["luci-app-tailscale"].read.file | has("/usr/sbin/tailscale_openclash_bypass") | not' "$acl_file" 'ACL must not grant file-exec access to the OpenClash helper'
 assert_not_contains '"set_secret"' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
 assert_not_contains '"luci.tailscale": [ "adguard_preflight" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json
@@ -686,6 +722,9 @@ assert_contains '"$OPENCLASH_BYPASS_INIT" enable' root/etc/uci-defaults/40_luci-
 assert_contains '"$OPENCLASH_BYPASS_INIT" start' root/etc/uci-defaults/40_luci-tailscale
 assert_before '"$TAILSCALE_SECRETS_BIN" migrate' '"$OPENCLASH_BYPASS_INIT" enable' root/etc/uci-defaults/40_luci-tailscale
 assert_before '"$OPENCLASH_BYPASS_INIT" enable' '"$OPENCLASH_BYPASS_INIT" start' root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'POLICY_ROUTING_INIT=' root/etc/uci-defaults/40_luci-tailscale
+assert_contains '"$POLICY_ROUTING_INIT" enable' root/etc/uci-defaults/40_luci-tailscale
+assert_contains '"$POLICY_ROUTING_INIT" start' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains "option adguard_password" root/etc/config/tailscale
 assert_not_contains "option authkey" root/etc/config/tailscale
 assert_contains "--cleanup-managed-firewall" root/etc/init.d/tailscale
@@ -697,6 +736,7 @@ assert_contains "Package/luci-app-tailscale/preinst" Makefile
 assert_not_contains "Package/luci-app-tailscale/conffiles" Makefile
 assert_contains "/etc/config/tailscale" Makefile
 assert_contains "/etc/config/tailscale_openclash" Makefile
+assert_contains "/etc/config/tailscale_policy_routing" Makefile
 assert_not_contains "Package/luci-app-tailscale/postinst" Makefile
 assert_contains "state_dir=/etc/.luci-app-tailscale-upgrade" Makefile
 assert_contains 'state_pending="$${state_dir}.pending"' Makefile
@@ -713,13 +753,17 @@ assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
 assert_contains '/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true' Makefile
 assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
 assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
+assert_contains "/usr/sbin/tailscale_policy_routing cleanup >/dev/null 2>&1 || true" Makefile
 assert_contains 'case "$${2:-}" in' Makefile
 assert_contains 'remove|[0-9]*) ;;' Makefile
 assert_contains 'case "$${1:-}" in' Makefile
-assert_contains '"$${cleanup_dir}/tailscale_openclash.absent" "$${cleanup_dir}/.complete"' Makefile
+assert_contains '"$${cleanup_dir}/tailscale_openclash.absent" "$${cleanup_dir}/tailscale_policy_routing"' Makefile
+assert_contains '"$${cleanup_dir}/.complete"' Makefile
 assert_not_contains 'APK_SCRIPT' Makefile
 assert_before "/usr/sbin/tailscale_openclash_bypass cleanup" "/etc/init.d/tailscale stop" Makefile
 assert_before "/etc/init.d/tailscale-openclash-bypass disable" "/etc/init.d/tailscale stop" Makefile
+assert_before "/usr/sbin/tailscale_policy_routing cleanup" "/etc/init.d/tailscale stop" Makefile
+assert_before "/etc/init.d/tailscale-policy-routing disable" "/etc/init.d/tailscale stop" Makefile
 assert_contains "/etc/init.d/tailscale stop" Makefile
 assert_not_contains "/etc/init.d/tailscale stop >/dev/null 2>&1 || true" Makefile
 assert_not_contains "grep -b" root/usr/sbin/tailscale_openclash_bypass

@@ -11,16 +11,16 @@
 				"/usr/sbin/tailscale logout": [ "exec" ]
 			},
 			"ubus": {
-				"luci.tailscale": [ "secret_status", "openclash_bypass_status" ],
+				"luci.tailscale": [ "secret_status", "openclash_bypass_status", "policy_routing_status" ],
 				"service": [ "list" ]
 			},
-			"uci": [ "tailscale", "tailscale_openclash" ]
+			"uci": [ "tailscale", "tailscale_openclash", "tailscale_policy_routing" ]
 		},
 		"write": {
 			"ubus": {
 				"luci.tailscale": [ "adguard_preflight", "set_secrets" ]
 			},
-			"uci": [ "tailscale", "tailscale_openclash" ]
+			"uci": [ "tailscale", "tailscale_openclash", "tailscale_policy_routing" ]
 		}
 	}
 }
