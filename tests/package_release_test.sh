@@ -753,7 +753,7 @@ assert_not_contains "/etc/init.d/tailscale-openclash-bypass start" Makefile
 assert_contains '/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true' Makefile
 assert_contains '[ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then' Makefile
 assert_contains "/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true" Makefile
-assert_contains "/usr/sbin/tailscale_policy_routing cleanup >/dev/null 2>&1 || true" Makefile
+assert_contains "/usr/sbin/tailscale_policy_routing cleanup >/dev/null 2>&1 || exit 1" Makefile
 assert_contains 'case "$${2:-}" in' Makefile
 assert_contains 'remove|[0-9]*) ;;' Makefile
 assert_contains 'case "$${1:-}" in' Makefile

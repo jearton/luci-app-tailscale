@@ -65,17 +65,17 @@ case "$${2:-}" in
 		;;
 esac
 
+if [ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_policy_routing ]; then
+	/usr/sbin/tailscale_policy_routing cleanup >/dev/null 2>&1 || exit 1
+fi
+if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-policy-routing ]; then
+	/etc/init.d/tailscale-policy-routing disable >/dev/null 2>&1 || exit 1
+fi
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_openclash_bypass ]; then
 	/usr/sbin/tailscale_openclash_bypass cleanup >/dev/null 2>&1 || true
 fi
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-openclash-bypass ]; then
 	/etc/init.d/tailscale-openclash-bypass disable >/dev/null 2>&1 || true
-fi
-if [ -z "$${IPKG_INSTROOT}" ] && [ -x /usr/sbin/tailscale_policy_routing ]; then
-	/usr/sbin/tailscale_policy_routing cleanup >/dev/null 2>&1 || true
-fi
-if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale-policy-routing ]; then
-	/etc/init.d/tailscale-policy-routing disable >/dev/null 2>&1 || true
 fi
 if [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/tailscale ]; then
 	/etc/init.d/tailscale stop >/dev/null 2>&1 || exit 1

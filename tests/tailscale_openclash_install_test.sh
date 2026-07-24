@@ -251,6 +251,8 @@ SH
 	cat >"$TMP_DIR/tailscale_policy_routing_helper" <<'SH'
 #!/bin/sh
 printf 'policy-helper %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
+[ "${POLICY_CLEANUP_FAIL:-0}" = 1 ] && [ "${1:-}" = cleanup ] && exit 1
+exit 0
 SH
 	chmod +x "$TMP_DIR/tailscale_policy_routing_helper"
 
@@ -262,9 +264,9 @@ SH
 
 	: >"$TMP_DIR/lifecycle.log"
 	if [ "$style" = 'apk' ]; then
-		IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm" "$mode"
+		IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" POLICY_CLEANUP_FAIL="${POLICY_CLEANUP_FAIL:-0}" sh "$TMP_DIR/prerm" "$mode" || return 1
 	else
-		IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" sh "$TMP_DIR/prerm" "$TMP_DIR/prerm-wrapper" "$mode"
+		IPKG_INSTROOT='' LIFECYCLE_LOG="$TMP_DIR/lifecycle.log" POLICY_CLEANUP_FAIL="${POLICY_CLEANUP_FAIL:-0}" sh "$TMP_DIR/prerm" "$TMP_DIR/prerm-wrapper" "$mode" || return 1
 	fi
 	cat "$TMP_DIR/lifecycle.log"
 }
@@ -286,10 +288,10 @@ mkdir -p "$UPGRADE_STATE_DIR" "$UPGRADE_STATE_DIR.pending"
 : >"$UPGRADE_STATE_DIR.pending/.complete"
 
 prerm_log="$(run_prerm remove)"
-expected_prerm='helper cleanup
-bypass disable
-policy-helper cleanup
+expected_prerm='policy-helper cleanup
 policy disable
+helper cleanup
+bypass disable
 tailscale stop'
 [ "$prerm_log" = "$expected_prerm" ] || fail "package removal must clean helper rules, disable bypass boot startup, then stop Tailscale\nactual:\n$prerm_log"
 [ ! -d "$UPGRADE_STATE_DIR" ] || fail "package removal must remove completed upgrade state"
@@ -297,5 +299,11 @@ tailscale stop'
 
 apk_prerm_log="$(run_prerm 1.2.10 apk)"
 [ "$apk_prerm_log" = "$expected_prerm" ] || fail "OpenWrt APK pre-deinstall must perform package removal cleanup\nactual:\n$apk_prerm_log"
+
+if POLICY_CLEANUP_FAIL=1 run_prerm remove >/dev/null; then
+	fail 'package removal must stop when policy-routing cleanup fails'
+fi
+[ "$(cat "$TMP_DIR/lifecycle.log")" = 'policy-helper cleanup' ] || \
+	fail 'failed policy-routing cleanup must not disable services or stop Tailscale'
 
 echo "tailscale OpenClash install lifecycle tests passed"

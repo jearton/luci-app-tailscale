@@ -59,7 +59,9 @@ priority_line_count() {
 }
 
 is_exact_rule_line() {
-	printf '%s\n' "$1" | grep -Eq "^$PRIORITY:[[:space:]].*(lookup|table)[[:space:]]+$TABLE([[:space:]]|$)"
+	# ip-rule has no comments or other ownership metadata. Only the exact rule we
+	# create can be treated as app-owned; constrained table-52 rules are foreign.
+	printf '%s\n' "$1" | grep -Fqx "$PRIORITY: from all lookup $TABLE"
 }
 
 runtime_rule_state() {
@@ -96,15 +98,25 @@ tailscale_rule_priority() {
 }
 
 mwan3_present() {
-	[ -x "$MWAN3_INIT" ]
+	[ -x "$MWAN3_INIT" ] && \
+		[ "$("$UCI_BIN" -q get mwan3.globals 2>/dev/null || true)" = 'globals' ]
+}
+
+mwan3_mark_mask() {
+	mask="$("$UCI_BIN" -q get mwan3.globals.mmx_mask 2>/dev/null || true)"
+	case "$mask" in
+	0[xX][0-9A-Fa-f]*) printf '%s\n' "$mask" ;;
+	*) printf '%s\n' '0x3f00' ;;
+	esac
 }
 
 mwan3_earlier_mark_rule() {
 	rules="$1"
-	tailscale_priority="$2"
-	[ -n "$tailscale_priority" ] || return 1
-	printf '%s\n' "$rules" | awk -v threshold="$tailscale_priority" '
-		/fwmark/ {
+	threshold="$2"
+	mask="$(mwan3_mark_mask)"
+	mwan3_present || return 1
+	printf '%s\n' "$rules" | awk -v threshold="$threshold" -v mask="$mask" '
+		/fwmark/ && index($0, "/" mask) && /(lookup|table)/ {
 			priority = $1
 			sub(/:$/, "", priority)
 			if (priority + 0 < threshold + 0) {
@@ -193,6 +205,23 @@ sync_enabled() {
 		esac
 	fi
 
+	if mwan3_earlier_mark_rule "$rules" "$PRIORITY"; then
+		if network_section_owned; then
+			delete_runtime_rule
+			cleanup_status=$?
+			case "$cleanup_status" in
+			0) ;;
+			2)
+				log_error 'refusing to remove the managed rule because priority 1000 now conflicts'
+				return 1
+				;;
+			*) return "$cleanup_status" ;;
+			esac
+		fi
+		log_error 'mwan3 has a fwmark policy rule before priority 1000; table 52 precedence is blocked'
+		return 0
+	fi
+
 	if network_section_exists; then
 		if ! network_section_owned; then
 			log_error 'network.ts_mwan3_table52 exists but is not owned by luci-app-tailscale'
@@ -217,9 +246,8 @@ sync_enabled() {
 	case "$add_status" in
 	0) return 0 ;;
 	2)
-		# A foreign rule took priority 1000 after this feature was enabled. Remove
-		# only our persistent declaration so later interface events cannot contend.
-		delete_owned_network_rule >/dev/null 2>&1 || true
+		# Keep the declaration so a later sync can safely recover if the foreign
+		# rule disappears. It also records that the app must not adopt that rule.
 		log_error 'priority 1000 is occupied by another policy rule'
 		return 1
 		;;
@@ -251,6 +279,7 @@ ensure() {
 		return 1
 		;;
 	esac
+	rules="$(rule_dump)" || return 1
 	if table_has_default_route; then
 		# Keep the persistent declaration for recovery after the exit node is
 		# removed, but never leave our high-priority runtime rule ahead of a
@@ -258,6 +287,22 @@ ensure() {
 		network_section_owned || return 0
 		delete_runtime_rule
 		return $?
+	fi
+	if mwan3_earlier_mark_rule "$rules" "$PRIORITY"; then
+		network_section_owned || return 0
+		delete_runtime_rule
+		cleanup_status=$?
+		case "$cleanup_status" in
+		0)
+			log_error 'mwan3 has a fwmark policy rule before priority 1000; table 52 precedence is blocked'
+			return 0
+			;;
+		2)
+			log_error 'refusing to remove the managed rule because priority 1000 now conflicts'
+			return 1
+			;;
+		*) return "$cleanup_status" ;;
+		esac
 	fi
 	network_section_owned || return 0
 	add_runtime_rule
@@ -292,7 +337,7 @@ print_status() {
 	mwan3=false
 	mwan3_present && mwan3=true
 	early_mark=false
-	if [ "$mwan3" = true ] && mwan3_earlier_mark_rule "$rules" "$tailscale_priority"; then
+	if mwan3_earlier_mark_rule "$rules" "$PRIORITY"; then
 		early_mark=true
 	fi
 
@@ -305,6 +350,9 @@ print_status() {
 	elif [ "$default_route" = true ]; then
 		state=blocked_default_route
 		message='Table 52 contains a default route, so precedence is blocked to preserve mwan3 routing.'
+	elif [ "$early_mark" = true ]; then
+		state=blocked_mwan3_priority
+		message='A mwan3 fwmark policy rule precedes priority 1000, so table 52 precedence is blocked.'
 	elif [ "$section_exists" = true ] && [ "$owned" = false ]; then
 		state=blocked_ownership
 		message='The named network rule is not owned by luci-app-tailscale.'

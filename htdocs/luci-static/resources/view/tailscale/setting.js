@@ -382,6 +382,7 @@ function renderPolicyRoutingStatus(status) {
 		waiting: _('Enabled; waiting for the managed policy rule'),
 		disabled: _('Disabled; mwan3 routing is unchanged'),
 		blocked_default_route: _('Blocked; table 52 contains a default route'),
+		blocked_mwan3_priority: _('Blocked; a mwan3 rule has higher priority than 1000'),
 		blocked_priority_conflict: _('Blocked; priority 1000 is already in use'),
 		blocked_ownership: _('Blocked; an existing rule is not managed by this app'),
 		error: _('Configuration error')

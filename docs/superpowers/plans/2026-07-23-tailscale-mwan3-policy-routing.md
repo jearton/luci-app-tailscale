@@ -7,7 +7,8 @@
 3. 已接入软件包升级快照/恢复和 Tailscale 生命周期同步，确保应用升级、重启和
    接口事件后配置不丢失。
 4. 已通过 rpcd 暴露只读状态，在 LuCI 高级设置中增加可选开关、中文状态和
-   从真实 LAN 客户端验证的说明。
+   从真实 LAN 客户端验证的说明；冲突场景保留所有权、route-only `ifupdate` 会
+   重新评估 exit node 与 mwan3 优先级保护。
 5. 已补充简体/繁体中文翻译、包结构检查、rpcd 与 LuCI 视图测试。
 6. 已运行可由当前本地终端完整执行的 shell/JavaScript 测试和 `git diff --check`。
    OpenClash 信号注入测试会终止当前终端代理，保留给 Linux CI 执行。仅在用户另行

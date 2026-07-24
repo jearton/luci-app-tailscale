@@ -657,6 +657,9 @@ msgstr "已關閉，mwan3 路由保持不變"
 msgid "Blocked; table 52 contains a default route"
 msgstr "已阻止，路由表 52 包含預設路由"
 
+msgid "Blocked; a mwan3 rule has higher priority than 1000"
+msgstr "已阻止，存在優先順序數值小於 1000 的 mwan3 規則"
+
 msgid "Blocked; priority 1000 is already in use"
 msgstr "已阻止，優先順序 1000 已被占用"
 

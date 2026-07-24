@@ -662,6 +662,9 @@ msgstr ""
 msgid "Blocked; table 52 contains a default route"
 msgstr ""
 
+msgid "Blocked; a mwan3 rule has higher priority than 1000"
+msgstr ""
+
 msgid "Blocked; priority 1000 is already in use"
 msgstr ""
 

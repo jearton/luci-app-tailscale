@@ -34,9 +34,15 @@ shift
 key_file() { printf '%s/%s' "$state_dir" "$(printf '%s' "$1" | tr '/' '_')"; }
 case "$command" in
 get)
-	file="$(key_file "${1:?}")"
-	[ -f "$file" ] || exit 1
-	cat "$file"
+		case "${1:?}" in
+		mwan3.globals) printf '%s' 'globals' ;;
+		mwan3.globals.mmx_mask) printf '%s' '0x3f00' ;;
+		*)
+			file="$(key_file "$1")"
+			[ -f "$file" ] || exit 1
+			cat "$file"
+			;;
+		esac
 	;;
 set)
 	assignment="${1:?}"
@@ -77,7 +83,7 @@ case "$*" in
 'rule del priority 1000 lookup 52')
 	[ "${IP_FAIL_DELETE:-0}" != 1 ] || exit 1
 	tmp="$rules.tmp"
-	grep -v '^1000:.*lookup 52' "$rules" >"$tmp" || true
+	grep -v '^1000: from all lookup 52$' "$rules" >"$tmp" || true
 	mv "$tmp" "$rules"
 	printf '%s\n' 'del priority 1000 lookup 52' >>"$log"
 	;;
@@ -172,6 +178,14 @@ assert_line_count 1 '1000: from all lookup 52' "$TMP_DIR/rules"
 [ ! -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'disabled sync must not adopt a manually-created exact rule'
 
 reset_state
+run_helper sync
+printf '%s\n' '1000: from 10.10.10.0/24 lookup 52' '2001: from all fwmark 0x100/0x3f00 lookup 1' '5270: from all lookup 52' >"$TMP_DIR/rules"
+write_uci 'tailscale_policy_routing.settings.enabled' '0'
+if run_helper sync; then fail 'disabled sync must refuse to delete a constrained table 52 rule'; fi
+[ -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'constrained-rule cleanup failure must retain UCI ownership for retry'
+assert_line_count 1 '1000: from 10.10.10.0/24 lookup 52' "$TMP_DIR/rules"
+
+reset_state
 printf '%s\n' '1000: from all lookup 1' '2001: from all fwmark 0x100/0x3f00 lookup 1' '5270: from all lookup 52' >"$TMP_DIR/rules"
 if run_helper sync; then fail 'sync must reject an occupied priority 1000'; fi
 [ ! -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'priority conflict must not create an owned UCI rule'
@@ -185,8 +199,11 @@ reset_state
 run_helper sync
 printf '%s\n' '1000: from all lookup 1' '2001: from all fwmark 0x100/0x3f00 lookup 1' '5270: from all lookup 52' >"$TMP_DIR/rules"
 if run_helper sync; then fail 'sync must reject a priority conflict introduced after enablement'; fi
-[ ! -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'priority conflict must remove the app-owned UCI rule to prevent future contention'
+[ -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'priority conflict must retain the app-owned UCI rule for safe recovery'
 assert_line_count 1 '1000: from all lookup 1' "$TMP_DIR/rules"
+printf '%s\n' '2001: from all fwmark 0x100/0x3f00 lookup 1' '5270: from all lookup 52' >"$TMP_DIR/rules"
+run_helper sync
+assert_line_count 1 '1000: from all lookup 52' "$TMP_DIR/rules"
 
 reset_state
 printf '%s\n' 'default dev tailscale0' >"$TMP_DIR/routes"
@@ -194,14 +211,14 @@ run_helper sync
 [ ! -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'default route in table 52 must prevent persistent precedence rule creation'
 assert_line_count 0 '1000: from all lookup 52' "$TMP_DIR/rules"
 status="$(run_helper status)"
-printf '%s' "$status" | jq -e '.state == "blocked_default_route" and .enabled == true and .mwan3_present == true and .mwan3_earlier_mark_rule == true' >/dev/null || fail 'status must identify the exit-node default route block and mwan3 precedence conflict'
+printf '%s' "$status" | jq -e '.state == "blocked_default_route" and .enabled == true and .mwan3_present == true and .mwan3_earlier_mark_rule == false' >/dev/null || fail 'status must identify the exit-node default route block without treating later mwan3 rules as earlier than priority 1000'
 
 reset_state
 run_helper sync
 printf '%s\n' 'default dev tailscale0' >"$TMP_DIR/routes"
-run_hotplug ifup
+run_hotplug ifupdate
 [ -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'hotplug default-route protection must retain the owned UCI declaration for recovery'
-assert_line_count 0 '1000: from all lookup 52' "$TMP_DIR/rules"
+assert_line_count 0 '1000: from all lookup 52' "$TMP_DIR/rules" # route-only ifupdate must remove the runtime rule
 printf '%s\n' '10.10.6.128/25 dev tailscale0' '100.64.2.0/24 dev tailscale0' >"$TMP_DIR/routes"
 run_hotplug ifup
 assert_line_count 1 '1000: from all lookup 52' "$TMP_DIR/rules"
@@ -209,6 +226,15 @@ printf '%s\n' 'default dev tailscale0' >"$TMP_DIR/routes"
 run_helper sync
 [ ! -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'main sync must remove the persistent rule after an exit-node default route appears'
 assert_line_count 0 '1000: from all lookup 52' "$TMP_DIR/rules"
+
+reset_state
+run_helper sync
+printf '%s\n' '500: from all fwmark 0x100/0x3f00 lookup 1' '1000: from all lookup 52' '2001: from all fwmark 0x200/0x3f00 lookup 2' '5270: from all lookup 52' >"$TMP_DIR/rules"
+run_helper ensure
+[ -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'earlier mwan3 priority must retain UCI ownership for recovery'
+assert_line_count 0 '1000: from all lookup 52' "$TMP_DIR/rules"
+status="$(run_helper status)"
+printf '%s' "$status" | jq -e '.state == "blocked_mwan3_priority" and .mwan3_earlier_mark_rule == true' >/dev/null || fail 'status must block when mwan3 precedes priority 1000'
 
 assert_not_contains '/etc/init.d/network' "$HELPER"
 assert_not_contains 'firewall' "$HELPER"
