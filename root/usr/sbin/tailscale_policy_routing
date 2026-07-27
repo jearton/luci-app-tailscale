@@ -10,6 +10,8 @@ LOGGER_CMD="${LOGGER_CMD:-logger}"
 FLOCK_BIN="${FLOCK_BIN:-flock}"
 MWAN3_INIT="${MWAN3_INIT:-/etc/init.d/mwan3}"
 LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale-policy-routing.lock}"
+SLEEP_BIN="${SLEEP_BIN:-sleep}"
+MONITOR_INTERVAL="${MONITOR_INTERVAL:-15}"
 
 SETTINGS_PACKAGE='tailscale_policy_routing'
 SETTINGS_SECTION='settings'
@@ -105,7 +107,7 @@ mwan3_present() {
 mwan3_mark_mask() {
 	mask="$("$UCI_BIN" -q get mwan3.globals.mmx_mask 2>/dev/null || true)"
 	case "$mask" in
-	0[xX][0-9A-Fa-f]*) printf '%s\n' "$mask" ;;
+	0[xX][0-9A-Fa-f]*) printf '%s\n' "$mask" | tr '[:upper:]' '[:lower:]' ;;
 	*) printf '%s\n' '0x3f00' ;;
 	esac
 }
@@ -116,7 +118,7 @@ mwan3_earlier_mark_rule() {
 	mask="$(mwan3_mark_mask)"
 	mwan3_present || return 1
 	printf '%s\n' "$rules" | awk -v threshold="$threshold" -v mask="$mask" '
-		/fwmark/ && index($0, "/" mask) && /(lookup|table)/ {
+		/fwmark/ && index(tolower($0), "/" mask) && /(lookup|table)/ {
 			priority = $1
 			sub(/:$/, "", priority)
 			if (priority + 0 < threshold + 0) {
@@ -163,9 +165,16 @@ delete_runtime_rule() {
 }
 
 cleanup_owned_state() {
+	strict_cleanup="${1:-0}"
+	rules="$(rule_dump)" || return 1
 	if ! network_section_exists; then
-		# Do not delete a manually-created exact runtime rule when no owned UCI
-		# declaration proves that it belongs to this application.
+		# A normal disable does not adopt or remove manually-created exact rules.
+		# Package removal is stricter: it must not leave an indistinguishable
+		# priority-1000 rule behind after the helper is gone.
+		if [ "$strict_cleanup" = 1 ] && [ "$(runtime_rule_state "$rules")" = exact ]; then
+			log_error 'refusing package cleanup because an unowned priority 1000 table 52 rule remains'
+			return 2
+		fi
 		return 0
 	fi
 	if ! network_section_owned; then
@@ -383,6 +392,20 @@ print_status() {
 		'{state:$state, message:$message, enabled:$enabled, mwan3_present:$mwan3_present, mwan3_earlier_mark_rule:$mwan3_earlier_mark_rule, managed_network_rule:$managed_network_rule, runtime_rule_present:$runtime_rule_present, default_route:$default_route, tailscale_rule_priority:($tailscale_priority | if . == "" then null else tonumber end)}'
 }
 
+monitor() {
+	while :; do
+		if setting_enabled; then
+			# The normal sync and hotplug paths report actionable errors. The monitor
+			# retries quietly so a persistent external conflict cannot flood syslog.
+			saved_logger="$LOGGER_CMD"
+			LOGGER_CMD=:
+			run_locked ensure || :
+			LOGGER_CMD="$saved_logger"
+		fi
+		"$SLEEP_BIN" "$MONITOR_INTERVAL" || return 0
+	done
+}
+
 run_locked() {
 	lock_dir="${LOCK_FILE%/*}"
 	[ "$lock_dir" = "$LOCK_FILE" ] && lock_dir=.
@@ -395,10 +418,12 @@ run_locked() {
 case "${1:-}" in
 sync) run_locked sync ;;
 ensure) run_locked ensure ;;
-cleanup) run_locked cleanup_owned_state ;;
+cleanup) run_locked cleanup_owned_state 1 ;;
+enabled) setting_enabled ;;
+monitor) monitor ;;
 status) print_status ;;
 *)
-	echo "usage: $0 {sync|ensure|cleanup|status}" >&2
+	echo "usage: $0 {sync|ensure|cleanup|enabled|monitor|status}" >&2
 	exit 2
 	;;
 esac

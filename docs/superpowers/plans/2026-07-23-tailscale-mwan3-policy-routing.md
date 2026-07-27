@@ -13,3 +13,6 @@
 6. 已运行可由当前本地终端完整执行的 shell/JavaScript 测试和 `git diff --check`。
    OpenClash 信号注入测试会终止当前终端代理，保留给 Linux CI 执行。仅在用户另行
    明确确认后，才部署到杭州办公室 OpenWrt 验证；不写入 hzsls-openwrt。
+7. 已在独立评审后补强：统一规范化 mwan3 标记掩码的十六进制大小写；软件包卸载
+   不会遗留无 UCI 所有权的精确 `priority 1000 lookup 52` 规则；策略服务以 15 秒
+   间隔静默校验已拥有的运行态规则，覆盖 tailscaled 单独重启和路由状态变更。

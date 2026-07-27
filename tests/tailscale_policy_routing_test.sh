@@ -33,10 +33,17 @@ command="${1:?}"
 shift
 key_file() { printf '%s/%s' "$state_dir" "$(printf '%s' "$1" | tr '/' '_')"; }
 case "$command" in
-get)
+	get)
 		case "${1:?}" in
 		mwan3.globals) printf '%s' 'globals' ;;
-		mwan3.globals.mmx_mask) printf '%s' '0x3f00' ;;
+		mwan3.globals.mmx_mask)
+			file="$(key_file "$1")"
+			if [ -f "$file" ]; then
+				cat "$file"
+			else
+				printf '%s' '0x3f00'
+			fi
+			;;
 		*)
 			file="$(key_file "$1")"
 			[ -f "$file" ] || exit 1
@@ -103,6 +110,12 @@ cat >"$TMP_DIR/bin/flock" <<'SH'
 exit 0
 SH
 chmod +x "$TMP_DIR/bin/flock"
+
+cat >"$TMP_DIR/bin/sleep" <<'SH'
+#!/bin/sh
+exit 1
+SH
+chmod +x "$TMP_DIR/bin/sleep"
 
 write_uci() { printf '%s' "$2" >"$TMP_DIR/uci/$1"; }
 read_uci() { cat "$TMP_DIR/uci/$1"; }
@@ -235,6 +248,28 @@ run_helper ensure
 assert_line_count 0 '1000: from all lookup 52' "$TMP_DIR/rules"
 status="$(run_helper status)"
 printf '%s' "$status" | jq -e '.state == "blocked_mwan3_priority" and .mwan3_earlier_mark_rule == true' >/dev/null || fail 'status must block when mwan3 precedes priority 1000'
+
+reset_state
+write_uci 'mwan3.globals.mmx_mask' '0x3F00'
+printf '%s\n' '500: from all fwmark 0x100/0x3f00 lookup 1' '5270: from all lookup 52' >"$TMP_DIR/rules"
+run_helper sync
+[ ! -e "$TMP_DIR/uci/network.ts_mwan3_table52" ] || fail 'uppercase mwan3 mask must still block priority 1000 creation'
+assert_line_count 0 '1000: from all lookup 52' "$TMP_DIR/rules"
+
+reset_state
+printf '%s\n' '1000: from all lookup 52' '2001: from all fwmark 0x100/0x3f00 lookup 1' '5270: from all lookup 52' >"$TMP_DIR/rules"
+rm -f "$TMP_DIR/uci/network.ts_mwan3_table52" "$TMP_DIR/uci/network.ts_mwan3_table52".*
+if run_helper cleanup; then fail 'package cleanup must refuse to leave an unowned exact runtime rule'; fi
+assert_line_count 1 '1000: from all lookup 52' "$TMP_DIR/rules"
+
+reset_state
+run_helper sync
+printf '%s\n' '2001: from all fwmark 0x100/0x3f00 lookup 1' '2002: from all fwmark 0x200/0x3f00 lookup 2' '5270: from all lookup 52' >"$TMP_DIR/rules"
+SLEEP_BIN="$TMP_DIR/bin/sleep"
+export SLEEP_BIN
+run_helper monitor
+unset SLEEP_BIN
+assert_line_count 1 '1000: from all lookup 52' "$TMP_DIR/rules"
 
 assert_not_contains '/etc/init.d/network' "$HELPER"
 assert_not_contains 'firewall' "$HELPER"
