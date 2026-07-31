@@ -7,6 +7,8 @@ UCI_DEFAULTS="$ROOT_DIR/root/etc/uci-defaults/40_luci-tailscale"
 TMP_DIR="${TMPDIR:-/tmp}/tailscale-openclash-install-test.$$"
 CONFIG_DIR="$TMP_DIR/etc/config"
 UPGRADE_STATE_DIR="$TMP_DIR/luci-app-tailscale-upgrade"
+LEGACY_TAILSCALE_HOTPLUG="$TMP_DIR/40-tailscale"
+LEGACY_TAILSCALE_HOTPLUG_BACKUP_DIR="$TMP_DIR/legacy-backup"
 
 cleanup() {
 	rm -rf "$TMP_DIR"
@@ -93,7 +95,6 @@ bypass start
 policy enable
 policy start'
 [ "$enabled_log" = "$expected_enabled" ] || fail "package defaults must migrate credentials, then enable and start managed helpers\nactual:\n$enabled_log"
-
 cat >"$TMP_DIR/tailscale-openclash-bypass" <<'SH'
 #!/bin/sh
 printf 'bypass %s\n' "$*" >>"${LIFECYCLE_LOG:?}"
@@ -120,13 +121,21 @@ run_preinst() {
 	' "$ROOT_DIR/Makefile" \
 	| sed \
 		-e 's/\$\${/${/g' \
+		-e "s#/etc/hotplug.d/iface/40-tailscale#$LEGACY_TAILSCALE_HOTPLUG#g" \
+		-e "s#/etc/tailscale/luci-app-tailscale-legacy#$LEGACY_TAILSCALE_HOTPLUG_BACKUP_DIR#g" \
 		-e "s#/etc/config/tailscale#$CONFIG_DIR/tailscale#g" \
 		-e "s#/etc/.luci-app-tailscale-upgrade#$UPGRADE_STATE_DIR#g" \
 		>"$TMP_DIR/preinst"
 	[ -s "$TMP_DIR/preinst" ] || fail "missing package pre-install configuration snapshot"
 	chmod +x "$TMP_DIR/preinst"
-	IPKG_INSTROOT='' sh "$TMP_DIR/preinst"
+	PATH="${PREINST_PATH:-$PATH}" IPKG_INSTROOT='' sh "$TMP_DIR/preinst"
 }
+
+cat >"$LEGACY_TAILSCALE_HOTPLUG" <<'EOF'
+#!/bin/sh
+/etc/init.d/tailscale start &
+EOF
+cp "$LEGACY_TAILSCALE_HOTPLUG" "$TMP_DIR/40-tailscale.before"
 
 cat >"$CONFIG_DIR/tailscale" <<'EOF'
 config tailscale 'settings'
@@ -146,10 +155,40 @@ cp "$CONFIG_DIR/tailscale_openclash" "$TMP_DIR/tailscale-openclash-before-upgrad
 cp "$CONFIG_DIR/tailscale_policy_routing" "$TMP_DIR/tailscale-policy-routing-before-upgrade"
 
 run_preinst
+[ ! -e "$LEGACY_TAILSCALE_HOTPLUG" ] || fail "pre-install hook must disable the legacy Tailscale interface hotplug starter before extraction"
+legacy_hotplug_backup="$(find "$LEGACY_TAILSCALE_HOTPLUG_BACKUP_DIR" -type f -name '40-tailscale.disabled.*' -print)"
+[ -n "$legacy_hotplug_backup" ] || fail "pre-install hook must preserve a backup of the disabled legacy Tailscale hotplug starter"
+cmp -s "$TMP_DIR/40-tailscale.before" "$legacy_hotplug_backup" || fail "legacy Tailscale hotplug backup must preserve the original script"
 [ -f "$UPGRADE_STATE_DIR/tailscale" ] || fail "pre-install hook must snapshot the existing Tailscale UCI config"
 [ -f "$UPGRADE_STATE_DIR/tailscale_openclash" ] || fail "pre-install hook must snapshot the existing OpenClash bypass UCI config"
 [ -f "$UPGRADE_STATE_DIR/tailscale_policy_routing" ] || fail "pre-install hook must snapshot the existing policy-routing UCI config"
 [ -f "$UPGRADE_STATE_DIR/.complete" ] || fail "pre-install hook must only publish a completed configuration snapshot"
+
+# Backup failure must not leave the duplicate hotplug starter executable.
+rm -rf "$LEGACY_TAILSCALE_HOTPLUG_BACKUP_DIR"
+printf 'not a directory\n' >"$LEGACY_TAILSCALE_HOTPLUG_BACKUP_DIR"
+cp "$TMP_DIR/40-tailscale.before" "$LEGACY_TAILSCALE_HOTPLUG"
+run_preinst
+[ ! -e "$LEGACY_TAILSCALE_HOTPLUG" ] || fail "pre-install hook must disable the legacy starter even when its backup cannot be created"
+rm -f "$LEGACY_TAILSCALE_HOTPLUG_BACKUP_DIR"
+
+# If removing the obsolete path itself fails transiently, preinst must make the
+# script non-executable before package extraction continues.
+mkdir -p "$TMP_DIR/fail-bin" "$LEGACY_TAILSCALE_HOTPLUG_BACKUP_DIR"
+cat >"$TMP_DIR/fail-bin/rm" <<EOF
+#!/bin/sh
+if [ "\$*" = "-f $LEGACY_TAILSCALE_HOTPLUG" ]; then
+	exit 1
+fi
+exec /bin/rm "\$@"
+EOF
+chmod +x "$TMP_DIR/fail-bin/rm"
+cp "$TMP_DIR/40-tailscale.before" "$LEGACY_TAILSCALE_HOTPLUG"
+PREINST_PATH="$TMP_DIR/fail-bin:$PATH" run_preinst
+[ -e "$LEGACY_TAILSCALE_HOTPLUG" ] || fail "remove-failure fixture must leave the legacy hook path in place"
+[ ! -x "$LEGACY_TAILSCALE_HOTPLUG" ] || fail "pre-install hook must make the legacy starter non-executable when removal fails"
+chmod 755 "$LEGACY_TAILSCALE_HOTPLUG"
+rm -f "$LEGACY_TAILSCALE_HOTPLUG"
 
 # Model package extraction replacing non-conffile files before the new package's
 # standard UCI-defaults phase runs.

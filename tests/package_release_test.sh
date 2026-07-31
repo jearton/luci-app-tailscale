@@ -716,6 +716,10 @@ assert_contains '"$TAILSCALE_SECRETS_BIN" migrate' root/etc/uci-defaults/40_luci
 assert_contains 'cleanup_legacy_adguard_dns_service' root/etc/uci-defaults/40_luci-tailscale
 assert_contains 'tailscale-adguard-dns.disabled' root/etc/uci-defaults/40_luci-tailscale
 assert_before 'cleanup_legacy_adguard_dns_service' '"$TAILSCALE_SECRETS_BIN" migrate' root/etc/uci-defaults/40_luci-tailscale
+assert_contains 'disable_legacy_hotplug' Makefile
+assert_contains '40-tailscale.disabled' Makefile
+assert_contains 'rm -f "$${legacy_hotplug}" || chmod 000 "$${legacy_hotplug}" || return 1' Makefile
+assert_before 'disable_legacy_hotplug || exit 1' '[ -f /etc/config/tailscale ] || exit 0' Makefile
 assert_not_contains 'ucitrack.@tailscale' root/etc/uci-defaults/40_luci-tailscale
 assert_not_contains 'uci -q batch' root/etc/uci-defaults/40_luci-tailscale
 assert_contains 'openclash_bypass_enabled="$("$UCI_BIN" -q get tailscale_openclash.settings.enabled' root/etc/uci-defaults/40_luci-tailscale
@@ -776,5 +780,6 @@ assert_contains 'Cleanup removes only the managed hook block and the four `luci-
 assert_not_exists root/lib/netifd/proto/tailscale.sh
 assert_not_exists htdocs/luci-static/resources/protocol/tailscale.js
 assert_not_exists root/etc/init.d/tailscale-adguard-dns
+assert_not_exists root/etc/hotplug.d/iface/40-tailscale
 
 echo "package release tests passed"
