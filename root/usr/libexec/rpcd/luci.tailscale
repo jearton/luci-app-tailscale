@@ -6,10 +6,11 @@
 PRECHECK_BIN="${PRECHECK_BIN:-/usr/sbin/tailscale_adguard_dns_switch}"
 SECRETS_BIN="${SECRETS_BIN:-/usr/sbin/tailscale_secrets}"
 OPENCLASH_BYPASS_BIN="${OPENCLASH_BYPASS_BIN:-/usr/sbin/tailscale_openclash_bypass}"
+POLICY_ROUTING_BIN="${POLICY_ROUTING_BIN:-/usr/sbin/tailscale_policy_routing}"
 JQ_BIN="${JQ_BIN:-jq}"
 
 print_methods() {
-	printf '%s\n' '{"secret_status":{},"openclash_bypass_status":{},"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""},"set_secrets":{"authkey_set":"","authkey":"","adguard_password_set":"","adguard_password":"","api_url":"","username":"","base_ref":""}}'
+	printf '%s\n' '{"secret_status":{},"openclash_bypass_status":{},"policy_routing_status":{},"adguard_preflight":{"candidate":"","api_url":"","username":"","password_set":"","password":"","default_upstreams":"","tailnet_upstreams":"","health_domain":"","expected_ips":""},"set_secrets":{"authkey_set":"","authkey":"","adguard_password_set":"","adguard_password":"","api_url":"","username":"","base_ref":""}}'
 }
 
 fail_json() {
@@ -125,6 +126,18 @@ run_openclash_bypass_status() {
 	printf '%s\n' "$output"
 }
 
+run_policy_routing_status() {
+	if output="$("$POLICY_ROUTING_BIN" status 2>&1)"; then
+		:
+	else
+		fail_json "failed to read Tailscale policy-routing status"
+	fi
+
+	printf '%s\n' "$output" | "$JQ_BIN" -se 'length == 1 and (.[0] | type == "object")' >/dev/null 2>&1 || \
+		fail_json "invalid Tailscale policy-routing status"
+	printf '%s\n' "$output"
+}
+
 run_set_secrets() {
 	request="$(cat)"
 	printf '%s' "$request" | "$JQ_BIN" -e '
@@ -197,6 +210,9 @@ case "${1:-}" in
 				;;
 			openclash_bypass_status)
 				run_openclash_bypass_status
+				;;
+			policy_routing_status)
+				run_policy_routing_status
 				;;
 			adguard_preflight)
 				parse_request

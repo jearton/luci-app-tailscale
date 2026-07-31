@@ -247,6 +247,14 @@ printf '%s\n' "$*" >>"${DNSMASQ_LOG:?}"
 SH
 chmod +x "$TMP_DIR/dnsmasq-init"
 
+cat >"$TMP_DIR/tailscale-policy-routing" <<'SH'
+#!/bin/sh
+set -eu
+[ "${1:-}" = 'sync' ] || exit 1
+printf '%s\n' "$1" >>"${POLICY_ROUTING_LOG:?}"
+SH
+chmod +x "$TMP_DIR/tailscale-policy-routing"
+
 run_helper() {
 	exit_node="$1"
 	allow_wan_direct="${2:-0}"
@@ -270,6 +278,7 @@ run_helper() {
 	FIREWALL_LOG="$TMP_DIR/firewall.log"
 	TAILSCALE_INIT_LOG="$TMP_DIR/tailscale-init.log"
 	DNSMASQ_LOG="$TMP_DIR/dnsmasq.log"
+	POLICY_ROUTING_LOG="$TMP_DIR/policy-routing.log"
 	PATH="$TMP_DIR/bin:$PATH"
 	TAILSCALE_BIN="$TMP_DIR/bin/tailscale"
 	IFCONFIG_BIN="$TMP_DIR/bin/ifconfig"
@@ -279,12 +288,13 @@ run_helper() {
 	FIREWALL_INIT="$TMP_DIR/firewall-init"
 	TAILSCALE_INIT="$TMP_DIR/tailscale-init"
 	DNSMASQ_INIT="$TMP_DIR/dnsmasq-init"
+	POLICY_ROUTING_HELPER="$TMP_DIR/tailscale-policy-routing"
 	TAILSCALE_SECRETS_BIN="$TMP_DIR/tailscale-secrets"
 	TAILSCALE_HELPER_STATE_DIR="$TMP_DIR/state"
 	FIREWALL_PENDING_STATE_FILE="$TMP_DIR/firewall-pending"
 	export ACCESS ACCEPT_DNS DISABLE_SNAT_SUBNET_ROUTES ALLOW_WAN_DIRECT TAILSCALE_PORT WAN_DIRECT_ZONES UCI_DB UCI_CHANGES_LOG UCI_COMMIT_LOG UCI_REVERT_LOG
-	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG TAILSCALE_EMPTY_MAGIC_DNS PATH
-	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT TAILSCALE_SECRETS_BIN TAILSCALE_HELPER_STATE_DIR FIREWALL_PENDING_STATE_FILE
+	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG POLICY_ROUTING_LOG TAILSCALE_EMPTY_MAGIC_DNS PATH
+	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT POLICY_ROUTING_HELPER TAILSCALE_SECRETS_BIN TAILSCALE_HELPER_STATE_DIR FIREWALL_PENDING_STATE_FILE
 	export UCI_FAIL_DELETE_KEY UCI_FAIL_SHOW_PACKAGE UCI_FAIL_COMMIT_PACKAGE FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART TAILSCALE_UP_FAIL
 	EXIT_NODE="$exit_node" export EXIT_NODE
 
@@ -312,8 +322,10 @@ chmod +x "$TMP_DIR/tailscale-secrets"
 : >"$TMP_DIR/firewall.log"
 : >"$TMP_DIR/tailscale-init.log"
 : >"$TMP_DIR/dnsmasq.log"
+: >"$TMP_DIR/policy-routing.log"
 
 run_helper "peer-exit-node"
+assert_contains 'sync' "$(cat "$TMP_DIR/policy-routing.log")" "helper should synchronize policy-routing precedence after Tailscale configuration"
 
 : >"$TMP_DIR/tailscale-init.log"
 : >"$TMP_DIR/uci_revert.log"

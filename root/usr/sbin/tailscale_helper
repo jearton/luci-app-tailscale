@@ -17,6 +17,7 @@ LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale.lock}"
 TAILSCALE_PORT="${TAILSCALE_PORT:-41641}"
 ALLOW_WAN_DIRECT="${ALLOW_WAN_DIRECT:-0}"
 WAN_DIRECT_ZONES="${WAN_DIRECT_ZONES:-wan}"
+POLICY_ROUTING_HELPER="${POLICY_ROUTING_HELPER:-/usr/sbin/tailscale_policy_routing}"
 
 log_error() {
 	"$LOGGER_CMD" -p daemon.err -t tailscale_helper "$(date '+%Y/%m/%d %H:%M:%S') $1"
@@ -500,4 +501,10 @@ if [ -n "$(uci changes network)" ]; then
 	uci commit network || revert_exit "Failed to commit Tailscale network cleanup."
 fi
 apply_firewall_changes || revert_exit "Failed to commit or apply Tailscale firewall configuration."
+
+# The policy-routing helper owns only its dedicated network UCI rule and the
+# matching runtime rule. Its failure must not disrupt an otherwise healthy node.
+if [ -x "$POLICY_ROUTING_HELPER" ] && ! "$POLICY_ROUTING_HELPER" sync; then
+	log_error "Failed to synchronize Tailscale/mwan3 policy routing precedence."
+fi
 exit 0

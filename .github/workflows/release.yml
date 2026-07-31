@@ -201,33 +201,34 @@ jobs:
           files: |
             artifacts/**/*.ipk
             artifacts/**/*.apk
+          generate_release_notes: true
           body: |
-            ## Usage
+            ## 安装说明
 
-            Upload the prebuilt ipk or apk package to the `/tmp` directory of OpenWrt. Install the main package, then optionally install either the Simplified Chinese or Traditional Chinese language package.
+            将预编译的 IPK 或 APK 上传到 OpenWrt 的 `/tmp` 目录。先安装主包，再按需安装简体中文或繁体中文语言包。
 
-            ### opkg package manager
+            ### opkg 包管理器
 
             ```sh
             opkg update
             opkg install /tmp/luci-app-tailscale_*.ipk
 
-            # Optional Simplified Chinese translation
+            # 可选：简体中文语言包
             opkg install /tmp/luci-i18n-tailscale-zh-cn_*.ipk
 
-            # Or optional Traditional Chinese translation
+            # 可选：繁体中文语言包
             opkg install /tmp/luci-i18n-tailscale-zh-tw_*.ipk
             ```
 
-            ### apk package manager
+            ### apk 包管理器
 
             ```sh
             apk update
             apk add --allow-untrusted /tmp/luci-app-tailscale-*.apk
 
-            # Optional Simplified Chinese translation
+            # 可选：简体中文语言包
             apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-cn-*.apk
 
-            # Or optional Traditional Chinese translation
+            # 可选：繁体中文语言包
             apk add --allow-untrusted /tmp/luci-i18n-tailscale-zh-tw-*.apk
             ```

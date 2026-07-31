@@ -86,6 +86,30 @@ uci commit tailscale_openclash
 
 --------------
 
+## mwan3 Policy Routing Compatibility
+
+- Disabled by default; enable it only when mwan3 fwmark rules take precedence
+  over Tailscale table `52` and LAN clients cannot reach Tailnet routes.
+- Creates an app-owned IPv4 `priority 1000 lookup 52` rule before mwan3's
+  fwmark rules. Destinations absent from table `52` continue to mwan3.
+- Refuses to activate if table `52` has a default route, such as while using a
+  Tailscale exit node, so ordinary internet traffic is not diverted from mwan3.
+- Uses only `network` UCI, `ip rule`, and an interface-event self-heal. It does
+  not modify firewall UCI, reload firewall4, or manage mwan3/OpenClash.
+- Validate from a real LAN client or with an equivalent mwan3 fwmark; an
+  unmarked `ip route get` on the router is not a sufficient test.
+
+Rollback:
+
+```sh
+uci set tailscale_policy_routing.settings.enabled='0'
+uci commit tailscale_policy_routing
+/etc/init.d/tailscale-policy-routing reload
+/usr/sbin/tailscale_policy_routing status
+```
+
+--------------
+
 ## AdGuard DNS Auto Switch
 
 - Disabled by default.
