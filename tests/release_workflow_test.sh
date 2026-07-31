@@ -20,6 +20,7 @@ grep -F "luci-i18n-tailscale-zh-cn-*.apk" "$workflow" >/dev/null
 grep -F "luci-i18n-tailscale-zh-tw-*.apk" "$workflow" >/dev/null
 grep -F 'expected exactly one artifact' "$workflow" >/dev/null
 grep -E 'softprops/action-gh-release@[0-9a-f]{40}' "$workflow" >/dev/null
+grep -F 'generate_release_notes: true' "$workflow" >/dev/null
 if grep -F 'softprops/action-gh-release@v2' "$workflow" >/dev/null; then
 	printf '%s\n' 'release action must be pinned to an immutable commit' >&2
 	exit 1
