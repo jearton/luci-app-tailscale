@@ -8,7 +8,7 @@ LUCI_TITLE:=LuCI for Tailscale
 LUCI_DEPENDS:=+tailscale +jshn +curl +jq +flock
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1.2.15
+PKG_VERSION:=1.2.16
 
 # Keep UCI configs as ordinary package data. The pre-install hook snapshots an
 # existing configuration before extraction; the UCI-defaults script restores it
@@ -18,8 +18,30 @@ define Package/luci-app-tailscale/preinst
 #!/bin/sh
 state_dir=/etc/.luci-app-tailscale-upgrade
 state_pending="$${state_dir}.pending"
+legacy_hotplug=/etc/hotplug.d/iface/40-tailscale
+legacy_backup_dir=/etc/tailscale/luci-app-tailscale-legacy
 
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
+
+disable_legacy_hotplug() {
+	local backup_file
+
+	[ -e "$${legacy_hotplug}" ] || [ -L "$${legacy_hotplug}" ] || return 0
+	backup_file="$${legacy_backup_dir}/40-tailscale.disabled.$$(date +%Y%m%d%H%M%S).$$$$"
+	if mkdir -p "$${legacy_backup_dir}" 2>/dev/null && cp -p "$${legacy_hotplug}" "$${backup_file}"; then
+		:
+	else
+		rm -f "$${backup_file}" 2>/dev/null || true
+	fi
+
+	# Disabling the duplicate starter is mandatory even when its backup fails.
+	# chmod is a last-resort guard for a transient remove failure; package
+	# extraction will subsequently remove the obsolete package-owned path.
+	rm -f "$${legacy_hotplug}" || chmod 000 "$${legacy_hotplug}" || return 1
+}
+
+disable_legacy_hotplug || exit 1
+
 [ -f /etc/config/tailscale ] || exit 0
 [ -f "$${state_dir}/.complete" ] && exit 0
 
