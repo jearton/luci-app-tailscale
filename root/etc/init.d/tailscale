@@ -45,6 +45,7 @@ normalize_tailscale_port() {
 
 tailscale_helper() {
 	local cfg="$1"
+	local state_was_present="${2:-0}"
 	local accept_routes hostname accept_dns advertise_exit_node exit_node advertise_routes disable_snat_subnet_routes allow_wan_direct wan_direct_zones access flags login_server std_out std_err port
 
 	config_get port $cfg 'port'
@@ -94,6 +95,7 @@ tailscale_helper() {
 		ALLOW_WAN_DIRECT="$allow_wan_direct" \
 		WAN_DIRECT_ZONES="$wan_direct_zones" \
 		TAILSCALE_PORT="$port" \
+		TAILSCALE_STATE_WAS_PRESENT="$state_was_present" \
 		TAILSCALE_HELPER_STATE_DIR="$CONFIG_PATH" \
 		FIREWALL_PENDING_STATE_FILE="$FIREWALL_PENDING_STATE_FILE"
 
@@ -188,7 +190,7 @@ tailscale_adguard_dns_apply_down() {
 
 start_instance() {
 	local cfg="$1"
-	local port config_path fw_mode std_out std_err state_file allow_wan_direct secrets_ref
+	local port config_path fw_mode std_out std_err state_file state_was_present allow_wan_direct secrets_ref
 
 	config_get secrets_ref "$cfg" 'secrets_ref'
 	if [ -n "$secrets_ref" ] && ! "$PROGS" activate "$secrets_ref"; then
@@ -220,6 +222,8 @@ start_instance() {
 	[ -d $config_path ] || mkdir -p $config_path
 	[ -d $CONFIG_PATH ] || mkdir -p $CONFIG_PATH
 	state_file="$config_path/tailscaled.state"
+	state_was_present=0
+	[ ! -s "$state_file" ] || state_was_present=1
 	
 	"$PROGD" --cleanup
 
@@ -236,7 +240,7 @@ start_instance() {
 	procd_set_param stderr "$std_err"
 	procd_close_instance
 
-	tailscale_helper "$cfg"
+	tailscale_helper "$cfg" "$state_was_present"
 	tailscale_keepalive "$cfg"
 	tailscale_adguard_dns "$cfg"
 }

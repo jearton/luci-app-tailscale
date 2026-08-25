@@ -86,6 +86,21 @@ uci commit tailscale_openclash
 
 --------------
 
+## Auth Key Lifecycle
+
+- An auth key is used only for first-time enrollment or when a new value is
+  explicitly entered in LuCI to re-enroll the device.
+- After the connection obtains a Tailscale address, the saved auth key is
+  removed from every protected credential version. The persistent
+  `tailscaled.state` identity is kept and is used for normal restarts.
+- An auth key is retained when enrollment fails so the configuration can be
+  corrected and retried.
+- Auth keys migrated from an older package are ignored when an existing
+  `tailscaled.state` identity is present, preventing a reboot from attempting
+  an unintended registration.
+
+--------------
+
 ## mwan3 Policy Routing Compatibility
 
 - Disabled by default; enable it only when mwan3 fwmark rules take precedence

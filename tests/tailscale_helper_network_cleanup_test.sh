@@ -263,6 +263,9 @@ run_helper() {
 	access="${5:-}"
 	disable_snat_subnet_routes="${6:-0}"
 	accept_dns="${7:-0}"
+	state_was_present="${8:-1}"
+	authkey_pending="${9:-0}"
+	has_authkey="${10:-1}"
 	ACCESS="$access"
 	ACCEPT_DNS="$accept_dns"
 	DISABLE_SNAT_SUBNET_ROUTES="$disable_snat_subnet_routes"
@@ -292,9 +295,14 @@ run_helper() {
 	TAILSCALE_SECRETS_BIN="$TMP_DIR/tailscale-secrets"
 	TAILSCALE_HELPER_STATE_DIR="$TMP_DIR/state"
 	FIREWALL_PENDING_STATE_FILE="$TMP_DIR/firewall-pending"
+	TAILSCALE_STATE_WAS_PRESENT="$state_was_present"
+	SECRET_AUTHKEY_PENDING="$authkey_pending"
+	SECRET_HAS_AUTHKEY="$has_authkey"
+	SECRETS_LOG="$TMP_DIR/secrets.log"
 	export ACCESS ACCEPT_DNS DISABLE_SNAT_SUBNET_ROUTES ALLOW_WAN_DIRECT TAILSCALE_PORT WAN_DIRECT_ZONES UCI_DB UCI_CHANGES_LOG UCI_COMMIT_LOG UCI_REVERT_LOG
 	export TAILSCALE_LOG LOGGER_LOG FIREWALL_LOG TAILSCALE_INIT_LOG DNSMASQ_LOG POLICY_ROUTING_LOG TAILSCALE_EMPTY_MAGIC_DNS PATH
 	export TAILSCALE_BIN IFCONFIG_BIN FLOCK_BIN LOCK_FILE LOGGER_CMD FIREWALL_INIT TAILSCALE_INIT DNSMASQ_INIT POLICY_ROUTING_HELPER TAILSCALE_SECRETS_BIN TAILSCALE_HELPER_STATE_DIR FIREWALL_PENDING_STATE_FILE
+	export TAILSCALE_STATE_WAS_PRESENT SECRET_AUTHKEY_PENDING SECRET_HAS_AUTHKEY SECRETS_LOG
 	export UCI_FAIL_DELETE_KEY UCI_FAIL_SHOW_PACKAGE UCI_FAIL_COMMIT_PACKAGE FIREWALL_FAIL_RELOAD FIREWALL_FAIL_RESTART TAILSCALE_UP_FAIL
 	EXIT_NODE="$exit_node" export EXIT_NODE
 
@@ -309,8 +317,26 @@ run_helper() {
 
 cat >"$TMP_DIR/tailscale-secrets" <<'SH'
 #!/bin/sh
-[ "${1:-}" = "get" ] && [ "${2:-}" = "authkey" ] || exit 1
-printf '%s\n' 'tskey-test-only'
+printf '%s\n' "$*" >>"${SECRETS_LOG:?}"
+case "${1:-}" in
+	get)
+		[ "${2:-}" = "authkey" ] || exit 1
+		printf '%s\n' 'tskey-test-only'
+		;;
+	authkey-pending)
+		[ "${SECRET_AUTHKEY_PENDING:-0}" = "1" ]
+		;;
+	has)
+		[ "${2:-}" = "authkey" ] || exit 1
+		[ "${SECRET_HAS_AUTHKEY:-1}" = "1" ]
+		;;
+	clear-authkey)
+		exit 0
+		;;
+	*)
+		exit 1
+		;;
+esac
 SH
 chmod +x "$TMP_DIR/tailscale-secrets"
 
@@ -323,6 +349,31 @@ chmod +x "$TMP_DIR/tailscale-secrets"
 : >"$TMP_DIR/tailscale-init.log"
 : >"$TMP_DIR/dnsmasq.log"
 : >"$TMP_DIR/policy-routing.log"
+: >"$TMP_DIR/secrets.log"
+
+: >"$TMP_DIR/tailscale.log"
+: >"$TMP_DIR/secrets.log"
+run_helper "" 0 41641 wan "" 0 0 1 0 1
+assert_not_contains '--authkey=' "$(cat "$TMP_DIR/tailscale.log")" \
+	"an existing node must ignore an unmarked auth key left by an older package"
+assert_contains 'clear-authkey' "$(cat "$TMP_DIR/secrets.log")" \
+	"a successful existing-node start must purge the stale stored auth key"
+
+: >"$TMP_DIR/tailscale.log"
+: >"$TMP_DIR/secrets.log"
+run_helper "" 0 41641 wan "" 0 0 0 0 1
+assert_contains '--authkey=tskey-test-only' "$(cat "$TMP_DIR/tailscale.log")" \
+	"a first enrollment without pre-existing state must use the saved auth key"
+assert_contains 'clear-authkey' "$(cat "$TMP_DIR/secrets.log")" \
+	"a successful first enrollment must purge the auth key"
+
+: >"$TMP_DIR/tailscale.log"
+: >"$TMP_DIR/secrets.log"
+run_helper "" 0 41641 wan "" 0 0 1 1 1
+assert_contains '--authkey=tskey-test-only' "$(cat "$TMP_DIR/tailscale.log")" \
+	"an explicitly replaced auth key must allow deliberate re-enrollment"
+assert_contains 'clear-authkey' "$(cat "$TMP_DIR/secrets.log")" \
+	"a successful explicit re-enrollment must purge the auth key"
 
 run_helper "peer-exit-node"
 assert_contains 'sync' "$(cat "$TMP_DIR/policy-routing.log")" "helper should synchronize policy-routing precedence after Tailscale configuration"
@@ -331,10 +382,13 @@ assert_contains 'sync' "$(cat "$TMP_DIR/policy-routing.log")" "helper should syn
 : >"$TMP_DIR/uci_revert.log"
 TAILSCALE_UP_FAIL=1
 export TAILSCALE_UP_FAIL
-if run_helper "" >/dev/null 2>&1; then
+: >"$TMP_DIR/secrets.log"
+if run_helper "" 0 41641 wan "" 0 0 0 0 1 >/dev/null 2>&1; then
 	fail "helper must fail when tailscale up fails"
 fi
 unset TAILSCALE_UP_FAIL
+[ "$(grep -c '^clear-authkey$' "$TMP_DIR/secrets.log" || true)" = "0" ] || \
+	fail "a failed enrollment must retain its auth key for correction and retry"
 [ ! -s "$TMP_DIR/tailscale-init.log" ] || fail "a tailscale up failure must not stop the Tailscale service"
 assert_contains "dhcp" "$(cat "$TMP_DIR/uci_revert.log")" "helper failure should revert its pending DHCP changes"
 assert_contains "network" "$(cat "$TMP_DIR/uci_revert.log")" "helper failure should revert its pending network changes"

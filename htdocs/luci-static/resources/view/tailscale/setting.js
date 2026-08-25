@@ -909,7 +909,7 @@ return view.extend({
 		authKeyOption.default = '';
 		authKeyOption.rmempty = true;
 		authKeyOption.placeholder = hasAuthKey ? _('Configured') : '';
-		authKeyOption.description = _('Leave blank to keep the existing auth key; enter a new value to replace it.');
+		authKeyOption.description = _('Used once for first-time enrollment or explicit re-enrollment, then removed after a successful connection. Leave blank for normal restarts.');
 		authKeyOption.cfgvalue = function() {
 			return '';
 		};

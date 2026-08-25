@@ -48,8 +48,8 @@ msgid "Configured"
 msgstr "已配置"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:268
-msgid "Leave blank to keep the existing auth key; enter a new value to replace it."
-msgstr "留空則保留現有認證密鑰；填寫新值則覆蓋。"
+msgid "Used once for first-time enrollment or explicit re-enrollment, then removed after a successful connection. Leave blank for normal restarts."
+msgstr "僅用於首次註冊或明確重新註冊，連線成功後自動刪除；正常重新啟動請留空。"
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:248
 msgid "Available flags"

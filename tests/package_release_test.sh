@@ -684,15 +684,15 @@ assert_not_contains 'msgid "Clear AdGuard Cache After Switch"' po/zh_Hans/tailsc
 assert_contains "placeholder = hasAdguardPassword ? _('Configured') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "placeholder = hasAuthKey ? _('Configured') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains "Leave blank to keep the existing AdGuard password; enter a new value to replace it." htdocs/luci-static/resources/view/tailscale/setting.js
-assert_contains "Leave blank to keep the existing auth key; enter a new value to replace it." htdocs/luci-static/resources/view/tailscale/setting.js
+assert_contains "Used once for first-time enrollment or explicit re-enrollment, then removed after a successful connection. Leave blank for normal restarts." htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "placeholder = hasAdguardPassword ? _('Configured; leave blank to keep existing value.') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_not_contains "placeholder = hasAuthKey ? _('Configured; leave blank to keep existing value.') : ''" htdocs/luci-static/resources/view/tailscale/setting.js
 assert_contains 'msgid "Configured"' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "已配置"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Leave blank to keep the existing AdGuard password; enter a new value to replace it."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "留空则保留现有 AdGuard 密码；填写新值则覆盖。"' po/zh_Hans/tailscale.po
-assert_contains 'msgid "Leave blank to keep the existing auth key; enter a new value to replace it."' po/zh_Hans/tailscale.po
-assert_contains 'msgstr "留空则保留现有认证密钥；填写新值则覆盖。"' po/zh_Hans/tailscale.po
+assert_contains 'msgid "Used once for first-time enrollment or explicit re-enrollment, then removed after a successful connection. Leave blank for normal restarts."' po/zh_Hans/tailscale.po
+assert_contains 'msgstr "仅用于首次注册或明确重新注册，连接成功后自动删除；正常重启请留空。"' po/zh_Hans/tailscale.po
 assert_contains 'msgid "Failed to stage protected credentials."' po/zh_Hans/tailscale.po
 assert_contains 'msgstr "暂存受保护凭证失败。"' po/zh_Hans/tailscale.po
 assert_contains '"luci.tailscale": [ "adguard_preflight", "set_secrets" ]' root/usr/share/rpcd/acl.d/luci-app-tailscale.json

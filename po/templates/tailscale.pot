@@ -42,7 +42,7 @@ msgid "Configured"
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:268
-msgid "Leave blank to keep the existing auth key; enter a new value to replace it."
+msgid "Used once for first-time enrollment or explicit re-enrollment, then removed after a successful connection. Leave blank for normal restarts."
 msgstr ""
 
 #: luci-app-tailscale/htdocs/luci-static/resources/view/tailscale/setting.js:248

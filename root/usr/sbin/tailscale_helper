@@ -15,6 +15,7 @@ EXIT_NODE_FIREWALL_STATE_FILE="$TAILSCALE_HELPER_STATE_DIR/exit_node_firewall_st
 FIREWALL_PENDING_STATE_FILE="${FIREWALL_PENDING_STATE_FILE:-/var/run/tailscale-firewall-pending}"
 LOCK_FILE="${LOCK_FILE:-/var/lock/tailscale.lock}"
 TAILSCALE_PORT="${TAILSCALE_PORT:-41641}"
+TAILSCALE_STATE_WAS_PRESENT="${TAILSCALE_STATE_WAS_PRESENT:-0}"
 ALLOW_WAN_DIRECT="${ALLOW_WAN_DIRECT:-0}"
 WAN_DIRECT_ZONES="${WAN_DIRECT_ZONES:-wan}"
 POLICY_ROUTING_HELPER="${POLICY_ROUTING_HELPER:-/usr/sbin/tailscale_policy_routing}"
@@ -435,14 +436,19 @@ case "${1:-}" in
 		;;
 esac
 
-# Execute tailscale up command
-authkey="$("$TAILSCALE_SECRETS_BIN" get authkey 2>/dev/null || true)"
+# Use an auth key only for first enrollment or an explicit replacement request.
+# Legacy stored keys are ignored when an existing tailscaled identity is present.
+authkey=
+if [ "$TAILSCALE_STATE_WAS_PRESENT" != "1" ] || \
+	"$TAILSCALE_SECRETS_BIN" authkey-pending >/dev/null 2>&1; then
+	authkey="$("$TAILSCALE_SECRETS_BIN" get authkey 2>/dev/null || true)"
+fi
 if [ -n "$authkey" ]; then
 	"$TAILSCALE_BIN" up --reset --authkey="$authkey" "$@" || revert_exit "tailscale up failed."
-	unset authkey
 else
 	"$TAILSCALE_BIN" up --reset "$@" || revert_exit "tailscale up failed."
 fi
+unset authkey
 
 # Use flock to acquire an exclusive lock
 exec 9> "$LOCK_FILE"
@@ -456,6 +462,13 @@ while [ -z "$("$IFCONFIG_BIN" | grep 'tailscale' | awk '{print $1}')" ] || [ -z 
 	count=$((count + 1))
 	[ "${count}" -ge 5 ] && revert_exit "Failed to get Tailscale IPv4 address after 5 attempts."
 done
+
+# Registration keys are one-time inputs. Purge every stored credential version
+# only after the connection has a Tailscale address, so failed enrollment keeps
+# the key available for correction and retry.
+if "$TAILSCALE_SECRETS_BIN" has authkey >/dev/null 2>&1; then
+	"$TAILSCALE_SECRETS_BIN" clear-authkey || revert_exit "Failed to clear the used Tailscale auth key."
+fi
 
 # Configure Tailscale MagicDNS
 if [ "$ACCEPT_DNS" = "1" ]; then

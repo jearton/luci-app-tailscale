@@ -275,6 +275,7 @@ run_service_stopped() {
 
 capture_tailscale_snat_args() {
 	disable_snat="$1"
+	state_was_present="${2:-1}"
 	PROCD_LOG="$TMP_DIR/procd-snat-$disable_snat.log"
 	FAKE_SECRETS_LOG="$TMP_DIR/procd-secrets-$disable_snat.log"
 	: >"$PROCD_LOG"
@@ -302,10 +303,52 @@ capture_tailscale_snat_args() {
 		procd_set_param() { printf 'set:%s\n' "$*" >>"$PROCD_LOG"; }
 		procd_append_param() { printf 'append:%s\n' "$*" >>"$PROCD_LOG"; }
 		procd_close_instance() { :; }
-		tailscale_helper settings
+		tailscale_helper settings "$state_was_present"
 	)
 	[ ! -s "$FAKE_SECRETS_LOG" ] || fail "init must not retrieve the auth key while building the procd command"
 	cat "$PROCD_LOG"
+}
+
+capture_start_state_flag() {
+	with_state="$1"
+	START_CONFIG_DIR="$TMP_DIR/start-config-$with_state"
+	rm -rf "$START_CONFIG_DIR"
+	mkdir -p "$START_CONFIG_DIR"
+	if [ "$with_state" = "1" ]; then
+		printf '%s\n' 'existing-machine-identity' >"$START_CONFIG_DIR/tailscaled.state"
+	fi
+	export START_CONFIG_DIR
+
+	(
+		. "$INIT_SCRIPT"
+		PROG=true
+		PROGS=true
+		PROGD=true
+		CONFIG_PATH="$START_CONFIG_DIR"
+
+		config_get() {
+			case "$3" in
+				config_path) eval "$1=\$START_CONFIG_DIR" ;;
+				port) eval "$1=41641" ;;
+				*) eval "$1=" ;;
+			esac
+		}
+		config_get_bool() {
+			case "$3" in
+				enabled) eval "$1=1" ;;
+				*) eval "$1=${4:-0}" ;;
+			esac
+		}
+		procd_open_instance() { :; }
+		procd_set_param() { :; }
+		procd_append_param() { :; }
+		procd_close_instance() { :; }
+		tailscale_helper() { printf '%s\n' "$2"; }
+		tailscale_keepalive() { :; }
+		tailscale_adguard_dns() { :; }
+
+		start_instance settings
+	)
 }
 
 cat >"$TMP_DIR/fake-tailscaled" <<'SH'
@@ -388,6 +431,17 @@ printf '%s\n' "$snat_disabled_args" | grep -F -- '--snat-subnet-routes=false' >/
 	fail "site-to-site enable must pass --snat-subnet-routes=false"
 printf '%s\n' "$snat_disabled_args" | grep -F 'DISABLE_SNAT_SUBNET_ROUTES=1' >/dev/null || \
 	fail "site-to-site enable must pass no-SNAT state to the firewall helper"
+printf '%s\n' "$snat_disabled_args" | grep -F 'TAILSCALE_STATE_WAS_PRESENT=1' >/dev/null || \
+	fail "existing state detection must be passed to the helper without exposing the state file"
+
+fresh_state_args="$(capture_tailscale_snat_args 0 0)"
+printf '%s\n' "$fresh_state_args" | grep -F 'TAILSCALE_STATE_WAS_PRESENT=0' >/dev/null || \
+	fail "first enrollment must tell the helper that no state existed before daemon startup"
+
+[ "$(capture_start_state_flag 1)" = "1" ] || \
+	fail "start_instance must detect a non-empty identity before starting tailscaled"
+[ "$(capture_start_state_flag 0)" = "0" ] || \
+	fail "start_instance must preserve first-enrollment intent before tailscaled can create state"
 
 snat_enabled_args="$(capture_tailscale_snat_args 0)"
 printf '%s\n' "$snat_enabled_args" | grep -F -- '--snat-subnet-routes=true' >/dev/null || \
